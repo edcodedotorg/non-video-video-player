@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Programmatic Video Editor Player</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for better aesthetics and readability */
+        :root {
+            --primary-color: #3b82f6; /* Tailwind blue-500 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3ff6;
+        }
+        #video-container {
+            aspect-ratio: 16 / 9; /* Standard video aspect ratio */
+            max-height: 80vh;
+            border: 4px solid #1f2937; /* Dark gray border */
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            position: relative; /* REQUIRED for CC overlay positioning */
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background-color: white;
+        }
+        #timeline {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #d1d5db; /* Light gray track */
+            outline: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #timeline::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--primary-color);
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+        }
+        #timeline::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: var(--primary-color);
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+        }
+        .control-btn {
+            transition: all 0.15s ease-in-out;
+        }
+        .control-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-2xl">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">Programmatic Video Editor Demo</h1>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Configuration Panel -->
+            <div class="lg:col-span-1">
+                <h2 class="text-xl font-semibold mb-3 text-gray-700">Video JSON Definition</h2>
+                <textarea id="video-json" rows="10" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm font-mono shadow-inner bg-gray-50" placeholder="Paste your video JSON here..."></textarea>
+
+                <!-- Audio Players (Hidden - Programmatically Controlled) -->
+                <!-- Main Audio Player (Top-level audio URL) -->
+                <audio id="main-audio-player" preload="auto" style="display: none;"></audio>
+                <!-- Scene Audio Player (Scene-level audio URL) -->
+                <audio id="scene-audio-player" preload="auto" style="display: none;"></audio>
+
+
+                <button onclick="loadVideo()" class="w-full bg-blue-600 text-white py-3 mt-4 rounded-lg font-semibold hover:bg-blue-700 control-btn">
+                    Load & Prepare Video
+                </button>
+                <p id="message" class="mt-4 text-sm text-red-600 min-h-6"></p>
+                <div id="stats" class="mt-4 p-3 bg-blue-50 text-blue-800 rounded-lg text-sm hidden"></div>
+                <div class="mt-4 p-3 bg-gray-100 rounded-lg text-xs text-gray-600">
+                    <p class="font-bold mb-1">Duration Rules:</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li>Fixed: `e.g., "12s"`, "1.5s"</li>
+                        <li>Auto Speech: `"auto"` + `"speech"` present = 0.5 seconds per word. (Default 0.5s if no speech)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Video Player and Controls -->
+            <div class="lg:col-span-2">
+                <h2 class="text-xl font-semibold mb-3 text-gray-700">Video Output</h2>
+
+                <!-- Video Iframe (Renderer) -->
+                <div id="video-container" class="mb-4">
+                    <!-- Initializing iframe with src="about:blank" -->
+                    <iframe id="scene-renderer" src="about:blank"></iframe> 
+                    <!-- Closed Caption Overlay -->
+                    <div id="closed-caption-overlay" class="absolute inset-x-0 bottom-0 p-4 bg-black bg-opacity-70 text-white text-lg text-center transition-opacity duration-300 hidden">
+                        Closed Captions will appear here
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="space-y-4">
+                    <!-- Timeline Scrubber -->
+                    <div class="flex items-center space-x-4">
+                        <span id="current-time-display" class="w-16 text-right font-mono text-sm text-gray-600">00:00.0</span>
+                        <input type="range" id="timeline" min="0" max="1000" value="0" step="1" oninput="seekTo(this.value)">
+                        <span id="total-duration-display" class="w-16 font-mono text-sm text-gray-600">--:--.-</span>
+                    </div>
+
+                    <!-- Playback Buttons and CC Toggle -->
+                    <div class="flex justify-between items-center px-4">
+                         <!-- Playback Buttons -->
+                        <div class="flex space-x-4">
+                            <button id="play-pause-btn" onclick="startStop()" disabled class="flex items-center px-6 py-2 bg-green-500 text-white rounded-full font-bold shadow-lg hover:bg-green-600 disabled:bg-gray-400 control-btn">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                                </svg>
+                                Start Playback
+                            </button>
+                            <button id="reset-btn" onclick="resetVideo()" disabled class="flex items-center px-6 py-2 bg-red-500 text-white rounded-full font-bold shadow-lg hover:bg-red-600 disabled:bg-gray-400 control-btn">
+                                Reset
+                            </button>
+                        </div>
+
+                        <!-- Caption Toggle -->
+                        <div class="flex items-center">
+                            <input type="checkbox" id="cc-toggle" checked onchange="toggleCaptions()" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            <label for="cc-toggle" class="ml-2 text-sm font-medium text-gray-700 select-none">Show Captions</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Debug/Status -->
+                <div id="status-panel" class="mt-6 p-4 bg-gray-100 rounded-lg text-sm text-gray-700">
+                    <p>Current Scene: <span id="current-scene-info" class="font-semibold text-blue-700">N/A</span></p>
+                    <p>Elapsed Time in Scene: <span id="scene-time-info" class="font-semibold text-blue-700">0s</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Firebase SDK Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth;
+        window.userId = null;
+        window.isAuthReady = false;
+
+        // Firebase Initialization and Authentication
+        async function initializeFirebase() {
+            if (Object.keys(firebaseConfig).length === 0) {
+                console.warn("Firebase config is empty. Skipping initialization.");
+                window.isAuthReady = true;
+                return;
+            }
+
+            try {
+                // Set Firestore log level to Debug
+                setLogLevel('debug');
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Wait for the initial auth state change
+                onAuthStateChanged(auth, async (user) => {
+                    if (!user) {
+                        // Sign in anonymously if no user is found and no custom token is provided
+                        if (!initialAuthToken) {
+                            await signInAnonymously(auth);
+                        }
+                    }
+                    if (user) {
+                        window.userId = user.uid;
+                        console.log("Firebase initialized. User ID:", window.userId);
+                    }
+                    window.isAuthReady = true;
+                });
+
+                // If a custom token is provided, use it for sign-in
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else if (!auth.currentUser) {
+                    // Sign in anonymously if not already signed in and no token
+                    await signInAnonymously(auth);
+                }
+
+            } catch (error) {
+                console.error("Error initializing Firebase or signing in:", error);
+                window.isAuthReady = true; // Still set ready to prevent indefinite loading
+            }
+        }
+
+        initializeFirebase();
+    </script>
+
+    <!-- Application Logic Script -->
+    <script>
+        // Global State for Video Playback
+        let videoData = null;
+        let processedScenes = [];
+        let totalDurationMs = 0;
+        let isPlaying = false;
+        let currentSceneIndex = 0;
+        let currentTimeMs = 0; // Tracks the video's current playback position
+        let animationFrameId = null;
+        let lastTimestamp = 0; // Used to calculate delta time between frames
+
+        // DOM Elements
+        const jsonTextarea = document.getElementById('video-json');
+        const message = document.getElementById('message');
+        const stats = document.getElementById('stats');
+        const renderer = document.getElementById('scene-renderer');
+        const timeline = document.getElementById('timeline');
+        const currentTimeDisplay = document.getElementById('current-time-display');
+        const totalDurationDisplay = document.getElementById('total-duration-display');
+        const playPauseBtn = document.getElementById('play-pause-btn');
+        const resetBtn = document.getElementById('reset-btn'); 
+        const currentSceneInfo = document.getElementById('current-scene-info');
+        const sceneTimeInfo = document.getElementById('scene-time-info');
+        const ccOverlay = document.getElementById('closed-caption-overlay');
+        const ccToggle = document.getElementById('cc-toggle');
+        
+        // NEW GLOBAL: Audio Players
+        let mainAudioPlayer; 
+        let sceneAudioPlayer;
+
+        /**
+         * Helper function to convert time string (e.g., "12s", "1.5s") to milliseconds.
+         * Defaults to 5000ms if parsing fails.
+         * @param {string} durationStr
+         * @returns {number} Duration in milliseconds.
+         */
+        function parseDuration(durationStr) {
+            if (typeof durationStr !== 'string') return 5000;
+            const match = durationStr.match(/^(\d+(\.\d+)?)(s)$/i);
+            if (match) {
+                return parseFloat(match[1]) * 1000;
+            }
+            return 5000; // Default if not valid format
+        }
+
+        /**
+         * Calculates the actual duration for each scene, handling "auto" duration logic.
+         * Updates the global processedScenes and totalDurationMs.
+         */
+        function calculateSceneDurations(data) {
+            processedScenes = [];
+            totalDurationMs = 0;
+            // 0.5 second (500ms) is the new standard for auto-calculated time
+            const defaultAutoDurationMs = 500; 
+            const msPerWord = 500; 
+
+            for (const scene of data.scenes) {
+                let actualDurationMs;
+
+                if (scene.duration === "auto") {
+                    if (scene.speech) {
+                        // Calculate duration based on words: 0.5 second per word
+                        const wordCount = scene.speech.split(/\s+/).filter(w => w.length > 0).length;
+                        actualDurationMs = wordCount * msPerWord;
+                        scene.calcReason = `${wordCount} words * 0.5s/word`;
+                    } else {
+                        // Default duration for "auto" without speech
+                        actualDurationMs = defaultAutoDurationMs;
+                        scene.calcReason = `Default 0.5s (auto, no speech)`;
+                    }
+                } else {
+                    // Fixed duration
+                    actualDurationMs = parseDuration(scene.duration);
+                    scene.calcReason = `Fixed duration: ${scene.duration}`;
+                }
+
+                totalDurationMs += actualDurationMs;
+
+                processedScenes.push({
+                    ...scene,
+                    durationMs: actualDurationMs,
+                    startTimeMs: totalDurationMs - actualDurationMs,
+                    endTimeMs: totalDurationMs
+                });
+            }
+
+            // Update UI elements related to total duration
+            timeline.max = totalDurationMs;
+            totalDurationDisplay.textContent = formatTime(totalDurationMs);
+
+            return processedScenes;
+        }
+
+        /**
+         * Formats milliseconds into a standard MM:SS.S string.
+         * @param {number} ms Milliseconds
+         * @returns {string} Formatted time string
+         */
+        function formatTime(ms) {
+            if (isNaN(ms) || ms < 0) return "--:--.-";
+            const totalSeconds = ms / 1000;
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = Math.floor(totalSeconds % 60);
+            const tenths = Math.floor((totalSeconds - Math.floor(totalSeconds)) * 10);
+            return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${tenths}`;
+        }
+        
+        /**
+         * Toggles the visibility of the closed captions overlay based on the checkbox state.
+         */
+        function toggleCaptions() {
+            if (ccToggle.checked) {
+                ccOverlay.classList.remove('hidden');
+            } else {
+                ccOverlay.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Updates the iframe with the current scene's HTML and manages scene audio playback.
+         * @param {number} index
+         */
+        function renderScene(index) {
+            if (index >= 0 && index < processedScenes.length) {
+                const scene = processedScenes[index];
+                
+                const iframeDoc = renderer.contentDocument;
+
+                // 1. Load the full HTML content using document.write
+                iframeDoc.open();
+                iframeDoc.write(scene.html);
+                iframeDoc.close();
+
+                currentSceneInfo.textContent = 'Scene ' + (index + 1) + ' (' + scene.comment + ')';
+                
+                // 2. Update Closed Captions
+                const speechText = scene.speech || "No spoken audio for this scene.";
+                ccOverlay.innerHTML = '<p>' + speechText + '</p>';
+                
+                // Show/hide based on toggle state and speech presence
+                if (ccToggle.checked && scene.speech) {
+                    ccOverlay.classList.remove('hidden');
+                } else {
+                    ccOverlay.classList.add('hidden');
+                }
+
+                // 3. Scene Audio Management
+                const sceneAudioUrl = scene.audio;
+                const timeInSceneSeconds = (currentTimeMs - scene.startTimeMs) / 1000;
+                // Safety check to ensure time is non-negative, especially during seeks
+                const safeTimeInSceneSeconds = Math.max(0, timeInSceneSeconds); 
+
+                if (sceneAudioPlayer) {
+                    if (sceneAudioUrl) {
+                        if (sceneAudioUrl !== sceneAudioPlayer.src) {
+                            // New scene with new audio: load it
+                            sceneAudioPlayer.src = sceneAudioUrl;
+                            sceneAudioPlayer.load();
+                        }
+                        
+                        // FIX: Always pause before setting currentTime to ensure the 'ended' state resets.
+                        sceneAudioPlayer.pause(); 
+                        
+                        const audioDurationSeconds = sceneAudioPlayer.duration;
+
+                        // Check 1: If audio metadata is loaded (duration is a number)
+                        if (!isNaN(audioDurationSeconds) && audioDurationSeconds > 0) {
+                            if (safeTimeInSceneSeconds < audioDurationSeconds) {
+                                // We are within the audio bounds: sync and play/pause based on global state
+                                sceneAudioPlayer.currentTime = safeTimeInSceneSeconds;
+                                if (isPlaying) {
+                                    sceneAudioPlayer.play().catch(e => console.warn("Scene audio playback failed:", e));
+                                }
+                            } else {
+                                // We are past the end of the audio clip, but still in the scene duration
+                                sceneAudioPlayer.currentTime = audioDurationSeconds; // Snap to end
+                                sceneAudioPlayer.pause(); // Ensure it stays paused
+                            }
+                        } else {
+                            // Check 2: Audio metadata not yet loaded (e.g., NaN). Assume it's fine for now.
+                            sceneAudioPlayer.currentTime = safeTimeInSceneSeconds; 
+                            if (isPlaying) {
+                                // Since duration is unknown, we try to play, and rely on the browser to handle timing/loading.
+                                sceneAudioPlayer.play().catch(e => console.warn("Scene audio playback failed (metadata pending):", e));
+                            } else {
+                                sceneAudioPlayer.pause();
+                            }
+                        }
+                    } else {
+                        // Scene has no audio: stop and clear the scene player
+                        sceneAudioPlayer.pause();
+                        sceneAudioPlayer.src = ''; 
+                    }
+                }
+            }
+        }
+
+        /**
+         * Finds the scene index that corresponds to a given time in milliseconds.
+         * @param {number} timeMs
+         * @returns {number} Scene index.
+         */
+        function findSceneByTime(timeMs) {
+            for (let i = 0; i < processedScenes.length; i++) {
+                if (timeMs >= processedScenes[i].startTimeMs && timeMs < processedScenes[i].endTimeMs) {
+                    return i;
+                }
+            }
+            // If at the very end, return the last scene
+            if (timeMs >= totalDurationMs && processedScenes.length > 0) {
+                return processedScenes.length - 1;
+            }
+            return 0;
+        }
+
+        /**
+         * The main playback loop using requestAnimationFrame.
+         * @param {number} timestamp Current time provided by rAF.
+         */
+        function updateFrame(timestamp) {
+            if (!isPlaying || !videoData || processedScenes.length === 0) {
+                animationFrameId = null;
+                return;
+            }
+
+            // 1. Calculate Time Advancement (Delta Time based tracking)
+            if (lastTimestamp === 0) {
+                // Synchronization frame: set timestamp but do not advance time (deltaMs = 0 implicitly)
+                lastTimestamp = timestamp;
+            } else {
+                // Subsequent frames: calculate true delta.
+                const deltaMs = timestamp - lastTimestamp;
+                currentTimeMs += deltaMs;
+                lastTimestamp = timestamp;
+            }
+            
+            // Stop condition (end of video)
+            if (currentTimeMs >= totalDurationMs) {
+                stopPlayback();
+                seekTo(totalDurationMs);
+                return;
+            }
+
+            // 2. Check for scene transition
+            let currentScene = processedScenes[currentSceneIndex];
+            
+            // Check if we need to advance or rewind the scene index (handles boundary crossing or seeking during pause)
+            const currentSceneEndTime = currentScene.startTimeMs + currentScene.durationMs;
+            
+            if (currentTimeMs >= currentSceneEndTime || currentTimeMs < currentScene.startTimeMs) {
+                const newIndex = findSceneByTime(currentTimeMs);
+                if (newIndex !== currentSceneIndex) {
+                    currentSceneIndex = newIndex;
+                    // Re-render to load new HTML and manage scene audio state
+                    renderScene(currentSceneIndex); 
+                    currentScene = processedScenes[currentSceneIndex]; // Update reference
+                }
+            }
+            
+            // 3. Scene Audio Loop Check: If the scene audio finished while still in the scene duration, pause it.
+            if (sceneAudioPlayer && sceneAudioPlayer.src) {
+                const timeInSceneSeconds = (currentTimeMs - currentScene.startTimeMs) / 1000;
+                // Check if the scene audio has finished playing but the scene is still running
+                if (sceneAudioPlayer.duration > 0 && timeInSceneSeconds >= sceneAudioPlayer.duration) {
+                     sceneAudioPlayer.pause();
+                }
+            }
+
+
+            // 4. Update UI
+            const timeInSceneForDisplay = currentTimeMs - currentScene.startTimeMs;
+            sceneTimeInfo.textContent = formatTime(timeInSceneForDisplay) + ' / ' + formatTime(currentScene.durationMs);
+
+            // Update Timeline/Scrubber
+            timeline.value = currentTimeMs;
+            currentTimeDisplay.textContent = formatTime(currentTimeMs);
+
+            // 5. Continue loop
+            animationFrameId = requestAnimationFrame(updateFrame);
+        }
+
+        /**
+         * Toggles between starting and pausing playback.
+         */
+        function startStop() {
+            if (!videoData) {
+                message.textContent = "Please load a valid video JSON first.";
+                return;
+            }
+
+            if (isPlaying) {
+                // PAUSE
+                isPlaying = false;
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                
+                // Pause both audio tracks
+                if (mainAudioPlayer) { mainAudioPlayer.pause(); }
+                if (sceneAudioPlayer) { sceneAudioPlayer.pause(); }
+
+                playPauseBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                    </svg>
+                    Continue Playback
+                `;
+                playPauseBtn.classList.remove('bg-yellow-500');
+                playPauseBtn.classList.add('bg-green-500');
+
+            } else {
+                // START / RESUME
+                isPlaying = true;
+                // Use scrubber position as the video's start time for this session
+                currentTimeMs = parseInt(timeline.value); 
+                
+                // Reset lastTimestamp to 0 so updateFrame synchronizes correctly on the first frame.
+                lastTimestamp = 0; 
+                
+                const seekTimeSeconds = currentTimeMs / 1000;
+
+                // Play main audio if present, synchronized to currentTime
+                if (mainAudioPlayer && videoData.audio) {
+                    mainAudioPlayer.currentTime = seekTimeSeconds;
+                    mainAudioPlayer.play().catch(e => console.error("Main audio playback failed:", e));
+                }
+                
+                // Start scene audio if present in the current scene
+                renderScene(currentSceneIndex); 
+
+                animationFrameId = requestAnimationFrame(updateFrame);
+
+                playPauseBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                    Pause
+                `;
+                playPauseBtn.classList.remove('bg-green-500');
+                playPauseBtn.classList.add('bg-yellow-500');
+            }
+        }
+
+        /**
+         * Stops playback and updates the button state.
+         */
+        function stopPlayback() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            isPlaying = false;
+            
+            // Pause both audio tracks
+            if (mainAudioPlayer) { mainAudioPlayer.pause(); }
+            if (sceneAudioPlayer) { sceneAudioPlayer.pause(); }
+
+            playPauseBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                </svg>
+                Restart Playback
+            `;
+            playPauseBtn.classList.remove('bg-yellow-500');
+            playPauseBtn.classList.add('bg-green-500');
+        }
+
+        /**
+         * Seeks to a specific time on the timeline (in milliseconds).
+         * @param {number} timeMs Time in milliseconds (from the range input value).
+         */
+        function seekTo(timeMs) {
+            const time = parseInt(timeMs);
+            if (isNaN(time) || time < 0 || time > totalDurationMs) return;
+
+            // 1. Synchronize main audio player
+            if (mainAudioPlayer && videoData.audio) {
+                mainAudioPlayer.currentTime = time / 1000;
+            }
+
+            // 2. Update global time state
+            currentTimeMs = time; 
+            
+            // If playing, reset lastTimestamp to 0 to synchronize the loop on the next frame 
+            if (isPlaying) {
+                 lastTimestamp = 0;
+            }
+
+            // 3. Find the correct scene and force render/audio sync
+            const newIndex = findSceneByTime(time);
+            
+            if (newIndex !== currentSceneIndex) {
+                currentSceneIndex = newIndex;
+            }
+            // Always call renderScene to handle CC update, scene HTML update, and most importantly, scene audio sync/start/stop.
+            renderScene(currentSceneIndex); 
+
+            // 4. Update UI (scrubber position and time display)
+            timeline.value = time;
+            currentTimeDisplay.textContent = formatTime(time); 
+            
+            // 5. Update scene time info 
+            const currentScene = processedScenes[currentSceneIndex];
+            const newTimeInScene = time - currentScene.startTimeMs;
+            sceneTimeInfo.textContent = formatTime(Math.max(0, newTimeInScene)) + ' / ' + formatTime(currentScene.durationMs);
+
+            // If seeking to the end, stop playback
+            if (time >= totalDurationMs) {
+                stopPlayback();
+            }
+        }
+
+        /**
+         * Parses and processes the video JSON.
+         */
+        function loadVideo() {
+            stopPlayback(); // Stop any currently running video
+            message.textContent = '';
+            stats.classList.add('hidden');
+            
+            try {
+                // 1. Parse JSON
+                const jsonStr = jsonTextarea.value.trim();
+                if (!jsonStr) {
+                    throw new Error("Input JSON is empty.");
+                }
+                const data = JSON.parse(jsonStr);
+
+                if (!data.scenes || !Array.isArray(data.scenes) || data.scenes.length === 0) {
+                    throw new Error("JSON is missing a 'scenes' array or it is empty.");
+                }
+                videoData = data;
+
+                // 2. Configure Audio Players
+                if (mainAudioPlayer && videoData.audio) {
+                    mainAudioPlayer.src = videoData.audio;
+                    mainAudioPlayer.load();
+                } else if (mainAudioPlayer) {
+                    mainAudioPlayer.src = ''; // Clear source if no main audio is defined
+                }
+                if (sceneAudioPlayer) {
+                    sceneAudioPlayer.pause();
+                    sceneAudioPlayer.src = ''; // Always clear scene audio initially
+                }
+
+
+                // 3. Calculate Durations
+                calculateSceneDurations(videoData);
+
+                // 4. Initialize Playback State
+                currentSceneIndex = 0;
+                currentTimeMs = 0; // Initialize video time to zero
+                timeline.value = 0;
+
+                // 5. Render First Scene & Enable Controls
+                renderScene(0);
+                totalDurationDisplay.textContent = formatTime(totalDurationMs);
+                currentTimeDisplay.textContent = formatTime(0);
+                playPauseBtn.disabled = false;
+                resetBtn.disabled = false;
+                sceneTimeInfo.textContent = formatTime(0) + ' / ' + formatTime(processedScenes[0].durationMs);
+                
+                // Set initial CC state
+                toggleCaptions(); 
+                
+                message.textContent = 'Video loaded and ready! Total duration: ' + formatTime(totalDurationMs);
+                message.classList.remove('text-red-600');
+                message.classList.add('text-green-600');
+                
+                // Reset button text to 'Start Playback' (initial state)
+                playPauseBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                    </svg>
+                    Start Playback
+                `;
+                playPauseBtn.classList.remove('bg-yellow-500');
+                playPauseBtn.classList.add('bg-green-500');
+
+                // 6. Update Stats Panel
+                const sceneListHtml = processedScenes.map((s, i) => 
+                    '<li class="p-1 border-b border-blue-100 last:border-b-0">' +
+                        '<span class="font-bold">Scene ' + (i + 1) + ':</span> ' +
+                        formatTime(s.durationMs) +
+                        '<span class="text-xs text-blue-600">(' + s.calcReason + ')</span>' +
+                    '</li>'
+                ).join('');
+
+                stats.innerHTML = `
+                    <h4 class="font-bold mb-2">Processed Scenes (${processedScenes.length}):</h4>
+                    <ul class="list-none space-y-1 max-h-48 overflow-y-auto">${sceneListHtml}</ul>
+                `;
+                stats.classList.remove('hidden');
+
+            } catch (e) {
+                videoData = null;
+                processedScenes = [];
+                totalDurationMs = 0;
+                playPauseBtn.disabled = true;
+                resetBtn.disabled = true;
+                timeline.value = 0;
+                totalDurationDisplay.textContent = '--:--.-';
+                currentTimeDisplay.textContent = '00:00.0';
+                currentSceneInfo.textContent = 'N/A';
+                sceneTimeInfo.textContent = '0s';
+                
+                message.textContent = 'Error loading video: ' + e.message;
+                message.classList.remove('text-green-600');
+                message.classList.add('text-red-600');
+            }
+        }
+        
+        /**
+         * Resets the video to the beginning.
+         */
+        function resetVideo() {
+            stopPlayback();
+            seekTo(0);
+            if (processedScenes.length > 0) {
+                 renderScene(0);
+            }
+            playPauseBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                </svg>
+                Start Playback
+            `;
+            playPauseBtn.classList.remove('bg-yellow-500');
+            playPauseBtn.classList.add('bg-green-500');
+        }
+
+        // --- Initialization ---
+        
+        window.onload = function() {
+             // --- BASE64 SVG DEFINITIONS (Defined safely inside onload) ---
+            const FOR_LOOP_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style="display:block; width: 100%; max-width: 250px; margin: 20px auto;">' +
+                '<rect x="50" y="20" width="100" height="30" fill="#3b82f6" rx="5"/>' +
+                '<text x="100" y="38" font-family="Arial" font-size="12" fill="white" text-anchor="middle">Initialize i=0</text>' +
+                '<polygon points="100,50 105,60 95,60" fill="#3b82f6"/>' +
+                '<rect x="30" y="70" width="140" height="30" fill="#facc15" rx="5"/>' +
+                '<text x="100" y="88" font-family="Arial" font-size="12" fill="#333" text-anchor="middle">Condition (i &lt; 5)?</text>' +
+                '<line x1="100" y1="100" x2="100" y2="120" stroke="#3b82f6" stroke-width="2"/>' +
+                '<text x="110" y="110" font-size="10" fill="#3b82f6">True</text>' +
+                '<rect x="50" y="120" width="100" height="30" fill="#10b981" rx="5"/>' +
+                '<text x="100" y="138" font-family="Arial" font-size="12" fill="white" text-anchor="middle">Execute Body</text>' +
+                '<line x1="150" y1="135" x2="170" y2="135" stroke="#3b82f6" stroke-width="2"/>' +
+                '<line x1="170" y1="135" x2="170" y2="70" stroke="#3b82f6" stroke-width="2"/>' +
+                '<path d="M170 70 L150 70" stroke="#3b82f6" stroke-width="2" fill="none"/>' +
+                '<text x="160" y="125" font-size="10" fill="#3b82f6">Increment</text>' +
+                '<line x1="30" y1="85" x2="10" y2="85" stroke="#facc15" stroke-width="2"/>' +
+                '<text x="10" y="80" font-size="10" fill="#facc15">False</text>' +
+            '</svg>';
+            const FOR_LOOP_B64 = btoa(FOR_LOOP_SVG.trim());
+
+            const WHILE_LOOP_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" style="display:block; width: 100%; max-width: 250px; margin: 20px auto;">' +
+                '<rect x="30" y="30" width="140" height="30" fill="#facc15" rx="5"/>' +
+                '<text x="100" y="48" font-family="Arial" font-size="12" fill="#333" text-anchor="middle">Is Condition True?</text>' +
+                '<path d="M170 45 L190 44" stroke="#eab308" stroke-width="2" fill="none"/>' +
+                '<text x="180" y="40" font-size="10" fill="#eab308">False / End</text>' +
+                '<line x1="100" y1="60" x2="100" y2="90" stroke="#3b82f6" stroke-width="2"/>' +
+                '<text x="110" y="75" font-size="10" fill="#3b82f6">True</text>' +
+                '<rect x="50" y="90" width="100" height="30" fill="#10b981" rx="5"/>' +
+                '<text x="100" y="108" font-family="Arial" font-size="12" fill="white" text-anchor="middle">Execute Code</text>' +
+                '<path d="M100 120 L100 150 L30 150 L30 45 L40 45" stroke="#3b82f6" stroke-width="2" fill="none"/>' +
+                '<polygon points="40,40 40,50 50,45" fill="#3b82f6"/>' +
+            '</svg>';
+            const WHILE_LOOP_B64 = btoa(WHILE_LOOP_SVG.trim());
+
+            // --- INITIAL VIDEO JSON DEFINITION (Defined safely inside onload) ---
+            const INITIAL_VIDEO_JSON = JSON.stringify({
+                "comment": "Programming Loops Explainer (5 Scenes)",
+                "width": 1920,
+                "height": 1080,
+                "audio":"https://file-examples.com/storage/fe7fef962d6924cd69daf28/2017/11/file_example_MP3_700KB.mp3",
+                "scenes": [
+                    {
+                        "comment": "Scene 1: Introduction to Loops (Fixed)",
+                        "html": "<html><head><style>html{background:#1f2937; color: white; display: flex; align-items: center; justify-content: center; font-family: sans-serif;}</style></head><body><h1 style='font-size: 3rem; text-align: center;'>Programming Loops: Stop Repeating Yourself!</h1></body></html>",
+                        "duration":"4s"
+                    },
+                    {
+                        "comment": "Scene 2: For Loop (Counting/Infographic)",
+                        "html": '<html><head><style>html{background:#dbeafe; color: #1e40af; font-family: sans-serif;}</style></head><body>' +
+                            '<h2 style=\'text-align: center; font-size: 2rem; margin-top: 20px;\'>1. The For Loop: Counted Repetition</h2>' +
+                            '<div style=\'display: flex; justify-content: space-around; align-items: center;\'>' +
+                                '<div style=\'width: 50%; padding: 20px;\'>' +
+                                    '<pre style="background: #1f2937; color: white; padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>\\nfor (let i = 0; \\n     i &lt; 5; \\n     i++) {\\n  console.log("Count: " + i);\\n}\\n</code></pre>' + // Replaced with simple code block
+                                '</div>' +
+                                '<img src="data:image/svg+xml;base64,' + FOR_LOOP_B64 + '" style="width: 40%; max-width: 250px;"/>' +
+                            '</div>' +
+                        '</body></html>',
+                        "speech":"The for loop is primarily used when you know exactly how many times you need to repeat a block of code. It uses a counter variable to track initialization, condition check, and increment in one line.",
+                        "duration":"auto"
+                    },
+                    {
+                        "comment": "Scene 3: While Loop (Conditional/Infographic)",
+                        "html": '<html><head><style>html{background:#fffbe7; color: #92400e; font-family: sans-serif;}</style></head><body>' +
+                            '<h2 style=\'text-align: center; font-size: 2rem; margin-top: 20px;\'>2. The While Loop: Condition First</h2>' +
+                            '<div style=\'display: flex; justify-content: space-around; align-items: center;\'>' +
+                                '<img src="data:image/svg+xml;base64,' + WHILE_LOOP_B64 + '" style="width: 40%; max-width: 250px;"/>' +
+                                '<div style=\'width: 50%; padding: 20px;\'>' +
+                                    '<pre style="background: #1f2937; color: white; padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>\\nwhile (fuel > 0) {\\n  drive(10);\\n  fuel--;\\n}\\n</code></pre>' + // Replaced with simple code block
+                                '</div>' +
+                            '</div>' +
+                        '</body></html>',
+                        "speech":"The while loop is used for repetition when you don\\'t know the exact count, but you have a specific condition that must remain true for the loop to continue. It checks the condition before every iteration.",
+                        "duration":"auto"
+                    },
+                    {
+                        "comment": "Scene 4: Loop Control (Fixed)",
+                        "html": "<html><head><style>html{background:#e0f7e9; color: #065f46; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif;}</style></head><body><h2 style='font-size: 2rem;'>Controlling the Flow</h2><p style='font-size: 1.2rem; margin-top: 10px;'>Use <code style='background: #fef3c7; padding: 0.1rem 0.3rem; border-radius: 0.2rem;'>break</code> to exit the loop immediately.</p><p style='font-size: 1.2rem;'>Use <code style='background: #fef3c7; padding: 0.1rem 0.3rem; border-radius: 0.2rem;'>continue</code> to skip the current iteration and move to the next.</p></body></html>",
+                        "duration":"4s",
+                        "audio":"https://upload.wikimedia.org/wikipedia/commons/b/bc/Fr-bonjour.ogg",
+                    },
+                    {
+                        "comment": "Scene 5: Summary and Next Steps (Fixed)",
+                        "html": "<html><head><style>html{background:#f3f4f6; color: #1f2937; display: flex; align-items: center; justify-content: center; font-family: sans-serif;}</style></head><body><h1 style='font-size: 2rem; text-align: center;'>Loops complete! Now you can automate tasks.</h1></body></html>",
+                        "speech": "Congratulations! You now understand the basic concept of programming loops. This powerful tool is essential for automating any repetitive task in your code.",
+                        "duration":"auto"
+                    }
+                ]
+            }, null, 2);
+            
+
+            // Set default JSON value inside onload
+            jsonTextarea.value = INITIAL_VIDEO_JSON;
+
+            // Get audio player references
+            mainAudioPlayer = document.getElementById('main-audio-player');
+            sceneAudioPlayer = document.getElementById('scene-audio-player');
+
+            loadVideo();
+
+            // Expose global functions to window scope for HTML event handlers
+            window.loadVideo = loadVideo;
+            window.startStop = startStop;
+            window.seekTo = seekTo;
+            window.resetVideo = resetVideo;
+            window.toggleCaptions = toggleCaptions; 
+        }
+    </script>
+</body>
+</html>
