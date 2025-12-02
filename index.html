@@ -3,16 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Editor (Single Threaded Fix)</title>
+    <title>Video Editor (with UI Controls)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 
     <script type="module">
         import json from './example.json' with { type: 'json' }
         const jsonTextArea = document.querySelector('#video-json');
-        jsonTextArea.textContent = JSON.stringify(json,null,"    ");
+        // Only populate if empty (prevents overwriting on reload if browser caches)
+        if(!jsonTextArea.value.trim()) {
+            jsonTextArea.textContent = JSON.stringify(json,null,"    ");
+        }
     </script>
     <style>
         :root { --primary-color: #3b82f6; }
@@ -30,56 +32,135 @@
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .hidden { display: none; }
+        
+        /* Custom Scrollbar for editor */
+        .editor-scroll::-webkit-scrollbar { width: 8px; }
+        .editor-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+        .editor-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .editor-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="p-4 md:p-8">
     <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-2xl">
-        <h1 class="text-3xl font-bold mb-6 text-gray-800">Programmatic Video Editor & Encoder</h1>
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">Programmatic Video Editor</h1>
 
-        <div class="grid grid-cols-1 lg:col-span-3 gap-8">
-            <div class="lg:col-span-1">
-                <h2 class="text-xl font-semibold mb-3 text-gray-700">Video JSON</h2>
-                <textarea id="video-json" rows="10" class="w-full p-3 border border-gray-300 rounded-lg text-sm font-mono shadow-inner bg-gray-50" placeholder="Paste JSON here...">
+        <div class="grid grid-cols-1 lg:col-span-3 lg:grid-cols-3 gap-8">
+            
+            <div class="lg:col-span-1 flex flex-col gap-6">
                 
-                </textarea>
-                <button id="load-btn" class="w-full bg-blue-600 text-white py-3 mt-4 rounded-lg font-semibold hover:bg-blue-700">Load & Prepare</button>
-                <p id="message" class="mt-4 text-sm text-gray-600 min-h-6"></p>
+                <div>
+                    <h2 class="text-xl font-semibold mb-3 text-gray-700">Video JSON Source</h2>
+                    <textarea id="video-json" rows="6" class="w-full p-3 border border-gray-300 rounded-lg text-xs font-mono shadow-inner bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Paste JSON here..."></textarea>
+                    <button id="load-btn" class="w-full bg-blue-600 text-white py-2 mt-2 rounded-lg font-semibold hover:bg-blue-700 transition">Load JSON</button>
+                    <p id="message" class="mt-2 text-sm text-gray-600 min-h-[1.5rem]"></p>
+                </div>
+
+                <div id="editor-panel" class="hidden border-t pt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex justify-between items-center">
+                        Editor
+                        <button id="save-changes-btn" disabled class="text-xs px-3 py-1 bg-green-600 text-white rounded disabled:bg-gray-300 disabled:text-gray-500 hover:bg-green-700 transition">Save Changes</button>
+                    </h2>
+                    
+                    <div class="mb-4 space-y-2 border-b pb-4">
+                        <h3 class="text-xs uppercase font-bold text-gray-500 tracking-wider">Global Settings</h3>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Width</label>
+                                <input type="number" data-scope="global" data-key="width" class="editor-input w-full p-1 border rounded text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Height</label>
+                                <input type="number" data-scope="global" data-key="height" class="editor-input w-full p-1 border rounded text-sm">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700">Comment</label>
+                            <input type="text" data-scope="global" data-key="comment" class="editor-input w-full p-1 border rounded text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700">Audio URL</label>
+                            <input type="text" data-scope="global" data-key="audio" class="editor-input w-full p-1 border rounded text-sm">
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-end">
+                            <h3 class="text-xs uppercase font-bold text-gray-500 tracking-wider">Current Scene</h3>
+                        </div>
+                        
+                        <select id="scene-select" class="w-full p-2 border border-blue-300 bg-blue-50 rounded text-sm font-semibold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Duration</label>
+                                <input type="text" data-scope="scene" data-key="duration" class="editor-input w-full p-1 border rounded text-sm" placeholder="e.g. 4s or auto">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Comment</label>
+                                <input type="text" data-scope="scene" data-key="comment" class="editor-input w-full p-1 border rounded text-sm">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700">Speech / Caption</label>
+                            <textarea data-scope="scene" data-key="speech" rows="2" class="editor-input w-full p-1 border rounded text-sm"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700">Scene Audio URL</label>
+                            <input type="text" data-scope="scene" data-key="audio" class="editor-input w-full p-1 border rounded text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700">HTML Content</label>
+                            <textarea data-scope="scene" data-key="html" rows="6" class="editor-input w-full p-1 border rounded text-sm font-mono text-xs whitespace-nowrap overflow-x-auto"></textarea>
+                        </div>
+                    </div>
+                </div>
+
                 <audio id="main-audio-player" style="display: none;"></audio>
                 <audio id="scene-audio-player" style="display: none;"></audio>
             </div>
 
             <div class="lg:col-span-2">
-                <div id="video-container" class="mb-4">
+                <div id="video-container" class="mb-4 bg-gray-900">
                     <iframe id="scene-renderer" src="about:blank" scrolling="no"></iframe>
-                    <div id="closed-caption-overlay" class="absolute inset-x-0 bottom-0 p-4 bg-black bg-opacity-70 text-white text-lg text-center hidden"></div>
+                    <div id="closed-caption-overlay" class="absolute inset-x-0 bottom-4 px-4 text-center pointer-events-none hidden">
+                         <span class="inline-block bg-black bg-opacity-70 text-white text-lg px-3 py-1 rounded box-decoration-clone"></span>
+                    </div>
                 </div>
 
-                <div class="space-y-4">
+                <div class="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <div class="flex items-center space-x-4">
-                        <span id="current-time-display" class="text-sm font-mono w-16 text-right">00:00.0</span>
-                        <input type="range" id="timeline" min="0" max="1000" value="0" step="1" class="flex-grow">
-                        <span id="total-duration-display" class="text-sm font-mono w-16">--:--.-</span>
+                        <span id="current-time-display" class="text-sm font-mono w-16 text-right text-gray-600">00:00.0</span>
+                        <input type="range" id="timeline" min="0" max="1000" value="0" step="1" class="flex-grow h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                        <span id="total-duration-display" class="text-sm font-mono w-16 text-gray-600">--:--.-</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="flex justify-between items-center">
                         <div class="space-x-2">
-                            <button id="play-pause-btn" disabled class="px-4 py-2 bg-green-500 text-white rounded font-bold disabled:bg-gray-400">Play</button>
-                            <button id="reset-btn" disabled class="px-4 py-2 bg-red-500 text-white rounded font-bold disabled:bg-gray-400">Reset</button>
-                            <button id="encode-button" disabled class="px-4 py-2 bg-purple-600 text-white rounded font-bold disabled:bg-gray-400">Encode MP4</button>
+                            <button id="play-pause-btn" disabled class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm">Play</button>
+                            <button id="reset-btn" disabled class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm">Reset</button>
                         </div>
-                        <div class="flex items-center">
-                            <input type="checkbox" id="cc-toggle" checked>
-                            <label for="cc-toggle" class="ml-2 text-sm font-medium text-gray-700">Captions</label>
+                        <div class="flex items-center space-x-4">
+                            <div class="flex items-center">
+                                <input type="checkbox" id="cc-toggle" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
+                                <label for="cc-toggle" class="ml-2 text-sm font-medium text-gray-700 select-none">Captions</label>
+                            </div>
+                            <button id="encode-button" disabled class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm flex items-center">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                Export MP4
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <div id="encoding-status-panel" class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded hidden">
-                    <span id="status-message" class="flex items-center text-sm"></span>
+                <div id="encoding-status-panel" class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg hidden">
+                    <span id="status-message" class="flex items-center text-sm text-yellow-800 font-medium"></span>
                 </div>
-                <div id="video-output-container" class="mt-6 p-4 bg-green-50 border border-green-200 rounded hidden text-center">
-                    <h3 class="text-lg font-bold mb-2">Output</h3>
-                    <video id="output-video" controls class="w-full max-w-md mx-auto rounded shadow bg-black"></video>
-                    <button id="download-button" class="mt-4 px-6 py-2 bg-blue-600 text-white rounded font-bold">Download</button>
+                <div id="video-output-container" class="mt-6 p-6 bg-gray-50 border border-gray-200 rounded-lg hidden text-center">
+                    <h3 class="text-lg font-bold mb-3 text-gray-800">Rendered Video</h3>
+                    <video id="output-video" controls class="w-full max-w-lg mx-auto rounded-lg shadow-lg bg-black mb-4"></video>
+                    <button id="download-button" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md transition">Download Video</button>
                 </div>
             </div>
         </div>
@@ -93,6 +174,9 @@
         let videoData = null, processedScenes = [], totalDurationMs = 0;
         let isPlaying = false, currentTimeMs = 0, currentSceneIndex = 0;
         let animationFrameId = null, lastTimestamp = 0;
+        
+        // Used to track edits in the UI before saving
+        let editingSceneIndex = 0;
 
         // --- DOM ---
         const refs = {
@@ -115,7 +199,12 @@
             loadBtn: document.getElementById('load-btn'),
             mainAudio: document.getElementById('main-audio-player'),
             sceneAudio: document.getElementById('scene-audio-player'),
-            container: document.getElementById('video-container')
+            container: document.getElementById('video-container'),
+            // Editor Refs
+            editorPanel: document.getElementById('editor-panel'),
+            sceneSelect: document.getElementById('scene-select'),
+            saveBtn: document.getElementById('save-changes-btn'),
+            editorInputs: document.querySelectorAll('.editor-input')
         };
 
         // --- HANDLERS ---
@@ -125,6 +214,96 @@
         refs.encodeBtn.onclick = encodeVideo;
         refs.timeline.oninput = (e) => seekTo(e.target.value);
         refs.ccToggle.onclick = () => { if(videoData) renderScene(currentSceneIndex); };
+        
+        // Editor Handlers
+        refs.sceneSelect.onchange = (e) => loadSceneInEditor(parseInt(e.target.value));
+        refs.editorInputs.forEach(input => {
+            input.addEventListener('input', (e) => handleEditorInput(e.target));
+        });
+        refs.saveBtn.onclick = saveChanges;
+
+
+        // --- EDITOR LOGIC ---
+
+        function initEditor() {
+            refs.editorPanel.classList.remove('hidden');
+            refs.saveBtn.disabled = true;
+            refs.saveBtn.textContent = "Save Changes";
+            refs.saveBtn.classList.remove('bg-yellow-500');
+            refs.saveBtn.classList.add('bg-green-600');
+
+            // Populate Global Settings
+            document.querySelector('[data-scope="global"][data-key="width"]').value = videoData.width || 1920;
+            document.querySelector('[data-scope="global"][data-key="height"]').value = videoData.height || 1080;
+            document.querySelector('[data-scope="global"][data-key="comment"]').value = videoData.comment || "";
+            document.querySelector('[data-scope="global"][data-key="audio"]').value = videoData.audio || "";
+
+            // Populate Scene Selector
+            refs.sceneSelect.innerHTML = '';
+            videoData.scenes.forEach((scene, index) => {
+                const opt = document.createElement('option');
+                opt.value = index;
+                const name = scene.comment || `Scene ${index + 1}`;
+                const dur = scene.duration === 'auto' ? '(Auto)' : scene.duration;
+                opt.textContent = `${index + 1}. ${name} [${dur}]`;
+                refs.sceneSelect.appendChild(opt);
+            });
+
+            // Load first scene
+            loadSceneInEditor(0);
+        }
+
+        function loadSceneInEditor(index) {
+            if(!videoData || !videoData.scenes[index]) return;
+            editingSceneIndex = index;
+            const scene = videoData.scenes[index];
+
+            document.querySelector('[data-scope="scene"][data-key="duration"]').value = scene.duration || "auto";
+            document.querySelector('[data-scope="scene"][data-key="comment"]').value = scene.comment || "";
+            document.querySelector('[data-scope="scene"][data-key="speech"]').value = scene.speech || "";
+            document.querySelector('[data-scope="scene"][data-key="audio"]').value = scene.audio || "";
+            document.querySelector('[data-scope="scene"][data-key="html"]').value = scene.html || "";
+        }
+
+        function handleEditorInput(target) {
+            const scope = target.dataset.scope;
+            const key = target.dataset.key;
+            const val = target.value;
+
+            // Update in-memory object immediately so switching scenes doesn't lose data
+            if (scope === 'global') {
+                if (key === 'width' || key === 'height') videoData[key] = parseInt(val);
+                else videoData[key] = val;
+            } else if (scope === 'scene') {
+                videoData.scenes[editingSceneIndex][key] = val;
+                // Update selector text if comment or duration changed
+                if(key === 'comment' || key === 'duration') {
+                    const opt = refs.sceneSelect.options[editingSceneIndex];
+                    const name = videoData.scenes[editingSceneIndex].comment || `Scene ${editingSceneIndex + 1}`;
+                    const dur = videoData.scenes[editingSceneIndex].duration === 'auto' ? '(Auto)' : videoData.scenes[editingSceneIndex].duration;
+                    opt.textContent = `${editingSceneIndex + 1}. ${name} [${dur}]`;
+                }
+            }
+
+            refs.saveBtn.disabled = false;
+            refs.saveBtn.textContent = "Save Changes *";
+            refs.saveBtn.classList.remove('bg-green-600');
+            refs.saveBtn.classList.add('bg-yellow-500');
+        }
+
+        function saveChanges() {
+            // formatting
+            const jsonStr = JSON.stringify(videoData, null, 4);
+            refs.json.value = jsonStr;
+            
+            refs.saveBtn.disabled = true;
+            refs.saveBtn.textContent = "Saved!";
+            setTimeout(() => { refs.saveBtn.textContent = "Save Changes"; refs.saveBtn.classList.add('bg-green-600'); refs.saveBtn.classList.remove('bg-yellow-500'); }, 1000);
+
+            // Reload the video to reflect changes (recalculate durations, etc)
+            loadVideo();
+        }
+
 
         // --- VIDEO LOGIC ---
         function parseDuration(str) {
@@ -136,13 +315,15 @@
         function calculateSceneDurations(data) {
             processedScenes = [];
             totalDurationMs = 0;
-            const msPerWord = 500;
+            const msPerWord = 350; // Adjusted for speed
             data.scenes.forEach(scene => {
-                let dur = scene.duration === "auto" 
-                    ? (scene.speech ? scene.speech.split(/\s+/).filter(w => w.length).length * msPerWord : 2000)
+                let dur = scene.duration === "auto" || !scene.duration
+                    ? (scene.speech ? Math.max(2000, scene.speech.split(/\s+/).filter(w => w.length).length * msPerWord) : 2000)
                     : parseDuration(scene.duration);
+                
+                const startTimeMs = totalDurationMs;
                 totalDurationMs += dur;
-                processedScenes.push({ ...scene, durationMs: dur, startTimeMs: totalDurationMs - dur, endTimeMs: totalDurationMs });
+                processedScenes.push({ ...scene, durationMs: dur, startTimeMs: startTimeMs, endTimeMs: totalDurationMs });
             });
             refs.timeline.max = totalDurationMs;
             refs.totTime.textContent = formatTime(totalDurationMs);
@@ -157,43 +338,86 @@
         function renderScene(index) {
             if (index < 0 || index >= processedScenes.length) return;
             const scene = processedScenes[index];
-            const doc = refs.renderer.contentDocument;
             
+            // Update Aspect Ratio on Container
+            if(videoData.width && videoData.height) {
+                refs.container.style.aspectRatio = `${videoData.width} / ${videoData.height}`;
+            }
+
+            const doc = refs.renderer.contentDocument;
             doc.open();
             doc.write(scene.html);
             doc.close();
             if(doc.body) { doc.body.style.margin = '0'; doc.body.style.overflow = 'hidden'; }
 
-            refs.ccOverlay.innerHTML = `<p>${scene.speech || ""}</p>`;
+            const ccSpan = refs.ccOverlay.querySelector('span');
+            ccSpan.textContent = scene.speech || "";
             refs.ccOverlay.style.display = (refs.ccToggle.checked && scene.speech) ? 'block' : 'none';
 
+            // Handle Scene Audio
             const tScene = (currentTimeMs - scene.startTimeMs) / 1000;
             if (scene.audio) {
-                if (refs.sceneAudio.src !== scene.audio) { refs.sceneAudio.src = scene.audio; refs.sceneAudio.load(); }
+                // Only reload if source changed
+                // Use getAttribute to avoid full URL resolution comparison issues
+                const currentSrc = refs.sceneAudio.getAttribute('src'); 
+                if (currentSrc !== scene.audio) { 
+                    refs.sceneAudio.src = scene.audio; 
+                    refs.sceneAudio.load(); 
+                }
+                
                 if (tScene >= 0 && tScene < (refs.sceneAudio.duration || 999)) {
-                    refs.sceneAudio.currentTime = tScene;
-                    if (isPlaying) refs.sceneAudio.play().catch(()=>{});
-                } else refs.sceneAudio.pause();
-            } else { refs.sceneAudio.pause(); refs.sceneAudio.src = ""; }
+                    // Sync if drift is large (>0.2s)
+                    if(Math.abs(refs.sceneAudio.currentTime - tScene) > 0.2) {
+                        refs.sceneAudio.currentTime = tScene;
+                    }
+                    if (isPlaying && refs.sceneAudio.paused) refs.sceneAudio.play().catch(()=>{});
+                } else if (!refs.sceneAudio.paused) {
+                    refs.sceneAudio.pause();
+                }
+            } else { 
+                if(!refs.sceneAudio.paused) refs.sceneAudio.pause(); 
+                refs.sceneAudio.removeAttribute('src'); 
+            }
         }
 
         function updateFrame(ts) {
             if (!isPlaying) return;
             if (!lastTimestamp) lastTimestamp = ts;
-            currentTimeMs += (ts - lastTimestamp);
+            const delta = ts - lastTimestamp;
             lastTimestamp = ts;
+            
+            currentTimeMs += delta;
 
-            if (currentTimeMs >= totalDurationMs) { stopPlayback(); seekTo(totalDurationMs); return; }
+            if (currentTimeMs >= totalDurationMs) { 
+                stopPlayback(); 
+                seekTo(totalDurationMs); 
+                return; 
+            }
 
-            let newIdx = currentSceneIndex;
-            while(newIdx < processedScenes.length && currentTimeMs >= processedScenes[newIdx].endTimeMs) newIdx++;
-            if (newIdx !== currentSceneIndex) { currentSceneIndex = newIdx; renderScene(newIdx); }
+            // Determine current scene based on time
+            let newIdx = 0;
+            for(let i=0; i<processedScenes.length; i++) {
+                if(currentTimeMs < processedScenes[i].endTimeMs) {
+                    newIdx = i;
+                    break;
+                }
+            }
 
-            const scene = processedScenes[currentSceneIndex];
-            if(refs.sceneAudio.duration && (currentTimeMs - scene.startTimeMs)/1000 >= refs.sceneAudio.duration) refs.sceneAudio.pause();
-
+            if (newIdx !== currentSceneIndex) { 
+                currentSceneIndex = newIdx; 
+                renderScene(newIdx); 
+            }
+            
+            // Update UI
             refs.timeline.value = currentTimeMs;
             refs.curTime.textContent = formatTime(currentTimeMs);
+            
+            // Check scene audio end
+            const scene = processedScenes[currentSceneIndex];
+            if(scene.audio && refs.sceneAudio.duration && (currentTimeMs - scene.startTimeMs)/1000 >= refs.sceneAudio.duration) {
+                refs.sceneAudio.pause();
+            }
+
             animationFrameId = requestAnimationFrame(updateFrame);
         }
 
@@ -204,31 +428,48 @@
                 isPlaying = true;
                 lastTimestamp = 0;
                 if (currentTimeMs >= totalDurationMs) currentTimeMs = 0;
-                if (refs.mainAudio.src) { refs.mainAudio.currentTime = currentTimeMs / 1000; refs.mainAudio.play().catch(()=>{}); }
+                
+                if (refs.mainAudio.src) { 
+                    refs.mainAudio.currentTime = currentTimeMs / 1000; 
+                    refs.mainAudio.play().catch(()=>{}); 
+                }
+                
+                // Ensure current scene is rendered and audio potentially started
                 renderScene(currentSceneIndex);
+
                 refs.playBtn.textContent = "Pause";
-                refs.playBtn.classList.replace('bg-green-500', 'bg-yellow-500');
+                refs.playBtn.classList.replace('bg-green-600', 'bg-yellow-500');
+                refs.playBtn.classList.replace('hover:bg-green-700', 'hover:bg-yellow-600');
+                
                 animationFrameId = requestAnimationFrame(updateFrame);
             }
         }
 
         function stopPlayback() {
             isPlaying = false;
-            cancelAnimationFrame(animationFrameId);
+            if(animationFrameId) cancelAnimationFrame(animationFrameId);
             refs.mainAudio.pause();
             refs.sceneAudio.pause();
             refs.playBtn.textContent = "Play";
-            refs.playBtn.classList.replace('bg-yellow-500', 'bg-green-500');
+            refs.playBtn.classList.replace('bg-yellow-500', 'bg-green-600');
+            refs.playBtn.classList.replace('hover:bg-yellow-600', 'hover:bg-green-700');
         }
 
         function seekTo(val) {
             currentTimeMs = parseInt(val);
+            
+            // Find scene for this time
             let idx = processedScenes.findIndex(s => currentTimeMs >= s.startTimeMs && currentTimeMs < s.endTimeMs);
-            if (idx === -1) idx = currentTimeMs >= totalDurationMs ? processedScenes.length - 1 : 0;
+            // Handle end of video case
+            if (idx === -1 && currentTimeMs >= totalDurationMs) idx = processedScenes.length - 1;
+            if (idx === -1) idx = 0;
+
             currentSceneIndex = idx;
             renderScene(idx);
+            
             refs.timeline.value = currentTimeMs;
             refs.curTime.textContent = formatTime(currentTimeMs);
+            
             if (refs.mainAudio.src) refs.mainAudio.currentTime = currentTimeMs / 1000;
         }
 
@@ -239,43 +480,51 @@
                 if (!data.scenes || !data.scenes.length) throw new Error("No scenes found");
                 videoData = data;
                 calculateSceneDurations(data);
-                if (videoData.audio) { refs.mainAudio.src = videoData.audio; refs.mainAudio.load(); }
-                else refs.mainAudio.src = "";
+                
+                if (videoData.audio) { 
+                    refs.mainAudio.src = videoData.audio; 
+                    refs.mainAudio.load(); 
+                } else {
+                    refs.mainAudio.removeAttribute('src');
+                }
                 
                 currentSceneIndex = 0; currentTimeMs = 0; seekTo(0);
                 refs.playBtn.disabled = refs.resetBtn.disabled = refs.encodeBtn.disabled = false;
-                refs.msg.textContent = "Video Loaded!"; refs.msg.className = "mt-4 text-sm text-green-600";
-            } catch(e) { refs.msg.textContent = e.message; refs.msg.className = "mt-4 text-sm text-red-600"; }
+                refs.msg.textContent = "Video Loaded Successfully!"; refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
+                
+                initEditor();
+
+            } catch(e) { 
+                console.error(e);
+                refs.msg.textContent = "Error loading JSON: " + e.message; refs.msg.className = "mt-2 text-sm text-red-600 font-semibold"; 
+                refs.playBtn.disabled = refs.resetBtn.disabled = refs.encodeBtn.disabled = true;
+            }
         }
 
         function resetVideo() { stopPlayback(); seekTo(0); }
 
-        // --- ENCODING LOGIC (Fixed) ---
+        // --- ENCODING LOGIC ---
 
         async function initFFmpeg() {
             if (ffmpeg) return;
             const { createFFmpeg } = FFmpeg;
-
-            // FIX: Removed manual blob patching. 
-            // We load the Single Threaded core via CDN directly and 
-            // set 'mainName' to 'main' so it doesn't look for 'proxy_main'.
             ffmpeg = createFFmpeg({
                 log: true,
                 corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
                 mainName: 'main'
             });
-
             await ffmpeg.load();
         }
 
         async function captureFrame(t, count) {
             seekTo(t);
-            // Increased delay slightly to ensure DOM reflow is complete before capture
-            await new Promise(r => setTimeout(r, 100)); 
+            // Delay for DOM rendering
+            await new Promise(r => setTimeout(r, 120)); 
 
             const canvas = await html2canvas(refs.container, {
                 ignoreElements: el => el.id === 'scene-renderer',
                 useCORS: true, allowTaint: true,
+                backgroundColor: null,
                 onclone: (clonedDoc) => {
                     const ifr = refs.renderer;
                     const cContainer = clonedDoc.getElementById('video-container');
@@ -285,24 +534,28 @@
                         Object.assign(div.style, {
                             width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, backgroundColor: 'white'
                         });
-                        // Capture the innerHTML of the iframe
+                        
                         try {
-                            if(ifr.contentDocument) {
+                            if(ifr.contentDocument && ifr.contentDocument.documentElement) {
+                                // serialize content
                                 div.innerHTML = ifr.contentDocument.documentElement.outerHTML;
                             }
                         } catch(e) { console.warn("Cross-origin iframe access blocked"); }
                         
                         cContainer.insertBefore(div, cIfr);
                         if(cIfr) cIfr.style.display = 'none';
+                        
                         const cc = clonedDoc.getElementById('closed-caption-overlay');
-                        if(cc) cc.style.display = refs.ccToggle.checked ? 'block' : 'none';
+                        if(cc) {
+                            cc.style.display = (refs.ccToggle.checked && refs.ccOverlay.querySelector('span').textContent) ? 'block' : 'none';
+                        }
                     }
                 }
             });
 
-            const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
             const buf = await blob.arrayBuffer();
-            const fname = `frame_${String(count).padStart(4,'0')}.png`;
+            const fname = `frame_${String(count).padStart(4,'0')}.jpg`;
             ffmpeg.FS('writeFile', fname, new Uint8Array(buf));
         }
 
@@ -317,11 +570,15 @@
             try {
                 await initFFmpeg();
 
-                const totalFrames = Math.ceil(totalDurationMs / FRAME_DURATION);
+                // Calculate frames
+                // We capture exactly enough frames to fill the duration
+                const totalFrames = Math.floor(totalDurationMs / FRAME_DURATION);
                 let count = 0;
 
                 // Capture Loop
-                for (let t = 0; t < totalDurationMs; t += FRAME_DURATION) {
+                // Note: We iterate by count to ensure exact filename sequence 0001, 0002...
+                for (let i = 0; i < totalFrames; i++) {
+                    let t = i * FRAME_DURATION;
                     count++;
                     refs.statusEl.innerHTML = `<div class="loader"></div> Capturing Frame ${count} / ${totalFrames}`;
                     await captureFrame(t, count);
@@ -329,22 +586,41 @@
 
                 refs.statusEl.innerHTML = '<div class="loader"></div> Encoding MP4...';
                 
-                // Audio Handling
-                const args = ['-framerate', `${FPS}`, '-i', 'frame_%04d.png'];
-                let hasAudio = false;
+                // Build FFmpeg arguments
+                const args = [
+                    '-framerate', `${FPS}`,
+                    '-i', 'frame_%04d.jpg'
+                ];
 
+                // Audio handling
+                let hasMainAudio = false;
+                
+                // 1. Main Audio
                 if (videoData.audio && videoData.audio.startsWith('data:audio')) {
                     try {
                         const ab = await (await fetch(videoData.audio)).arrayBuffer();
-                        ffmpeg.FS('writeFile', 'audio.mp3', new Uint8Array(ab));
-                        args.push('-i', 'audio.mp3', '-c:a', 'aac', '-shortest');
-                        hasAudio = true;
-                    } catch(e) { console.error("Audio processing failed", e); }
+                        ffmpeg.FS('writeFile', 'main_audio.mp3', new Uint8Array(ab));
+                        hasMainAudio = true;
+                    } catch(e) { console.error("Main Audio processing failed", e); }
                 }
 
-                // Video Encoding Args
-                // -pix_fmt yuv420p is essential for compatibility with Windows/QuickTime
-                args.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output.mp4');
+                // We will keep it simple: just use main audio if present for now. 
+                // Complex mixing of scene audio + main audio requires filter_complex which is advanced.
+                // For this demo, we append main audio if available.
+                if(hasMainAudio) {
+                    args.push('-i', 'main_audio.mp3');
+                    // Map video from stream 0, audio from stream 1
+                    args.push('-map', '0:v', '-map', '1:a');
+                    // Stop at shortest (video usually)
+                    args.push('-shortest');
+                    args.push('-c:a', 'aac');
+                }
+
+                // Video Codec Settings for compatibility
+                args.push('-c:v', 'libx264');
+                args.push('-pix_fmt', 'yuv420p'); // Critical for browser/OS support
+                args.push('-preset', 'ultrafast'); // Speed up encoding for demo
+                args.push('output.mp4');
                 
                 await ffmpeg.run(...args);
 
@@ -355,17 +631,18 @@
                     const a = document.createElement('a'); a.href = url; a.download = 'video.mp4'; a.click();
                 };
 
-                refs.statusEl.textContent = "Done!";
+                refs.statusEl.innerHTML = `<span class="text-green-700">✅ Encoding Complete!</span>`;
                 refs.outputContainer.classList.remove('hidden');
 
-                // Cleanup to free memory
+                // Cleanup
                 try { ffmpeg.FS('unlink', 'output.mp4'); } catch(e){}
-                if(hasAudio) try { ffmpeg.FS('unlink', 'audio.mp3'); } catch(e){}
-                for(let i=1; i<=count; i++) try { ffmpeg.FS('unlink', `frame_${String(i).padStart(4,'0')}.png`); } catch(e){}
+                if(hasMainAudio) try { ffmpeg.FS('unlink', 'main_audio.mp3'); } catch(e){}
+                for(let i=1; i<=count; i++) try { ffmpeg.FS('unlink', `frame_${String(i).padStart(4,'0')}.jpg`); } catch(e){}
 
             } catch(e) {
                 console.error(e);
-                refs.statusEl.textContent = "Error: " + e.message;
+                refs.statusEl.textContent = "Encoding Error: " + e.message;
+                refs.statusEl.className = "text-sm text-red-600 font-bold";
             } finally {
                 refs.encodeBtn.disabled = false;
                 seekTo(0);
