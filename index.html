@@ -51,7 +51,11 @@
                 <div>
                     <h2 class="text-xl font-semibold mb-3 text-gray-700">Video JSON Source</h2>
                     <textarea id="video-json" rows="6" class="w-full p-3 border border-gray-300 rounded-lg text-xs font-mono shadow-inner bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Paste JSON here..."></textarea>
-                    <button id="load-btn" class="w-full bg-blue-600 text-white py-2 mt-2 rounded-lg font-semibold hover:bg-blue-700 transition">Load JSON</button>
+                    <input type="file" id="file-input" accept=".json,application/json" class="hidden">
+                    <div class="flex gap-2 mt-2">
+                        <button id="load-file-btn" class="flex-1 bg-purple-600 text-white py-2 rounded-lg font-semibold hover:bg-purple-700 transition">Load from File</button>
+                        <button id="load-btn" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Load JSON</button>
+                    </div>
                     <p id="message" class="mt-2 text-sm text-gray-600 min-h-[1.5rem]"></p>
                 </div>
 
@@ -197,6 +201,8 @@
             outputVideo: document.getElementById('output-video'),
             downloadBtn: document.getElementById('download-button'),
             loadBtn: document.getElementById('load-btn'),
+            loadFileBtn: document.getElementById('load-file-btn'),
+            fileInput: document.getElementById('file-input'),
             mainAudio: document.getElementById('main-audio-player'),
             sceneAudio: document.getElementById('scene-audio-player'),
             container: document.getElementById('video-container'),
@@ -209,6 +215,8 @@
 
         // --- HANDLERS ---
         refs.loadBtn.onclick = loadVideo;
+        refs.loadFileBtn.onclick = () => refs.fileInput.click();
+        refs.fileInput.onchange = handleFileSelect;
         refs.playBtn.onclick = startStop;
         refs.resetBtn.onclick = resetVideo;
         refs.encodeBtn.onclick = encodeVideo;
@@ -304,6 +312,44 @@
             loadVideo();
         }
 
+
+        // --- FILE LOADING ---
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // Validate it's a JSON file
+            if (!file.name.endsWith('.json') && file.type !== 'application/json') {
+                refs.msg.textContent = "Please select a valid JSON file";
+                refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const content = e.target.result;
+                    // Validate it's valid JSON
+                    JSON.parse(content);
+                    // Populate textarea
+                    refs.json.value = content;
+                    refs.msg.textContent = `File "${file.name}" loaded successfully!`;
+                    refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
+                    // Reset file input so the same file can be selected again
+                    refs.fileInput.value = '';
+                } catch (error) {
+                    refs.msg.textContent = `Error parsing JSON: ${error.message}`;
+                    refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
+                    refs.fileInput.value = '';
+                }
+            };
+            reader.onerror = () => {
+                refs.msg.textContent = "Error reading file";
+                refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
+                refs.fileInput.value = '';
+            };
+            reader.readAsText(file);
+        }
 
         // --- VIDEO LOGIC ---
         function parseDuration(str) {
