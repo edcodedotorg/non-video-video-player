@@ -116,6 +116,14 @@
                         </div>
 
                         <div>
+                            <label class="flex items-center text-xs font-medium text-gray-700">
+                                <input type="checkbox" data-scope="scene" data-key="pauseBackground" class="editor-input w-4 h-4 text-blue-600 rounded focus:ring-blue-500 mr-2">
+                                Pause Background Audio
+                            </label>
+                            <p class="text-xs text-gray-500 mt-1">When checked, the overall background audio will pause during this scene</p>
+                        </div>
+
+                        <div>
                             <label class="block text-xs font-medium text-gray-700">HTML Content</label>
                             <textarea data-scope="scene" data-key="html" rows="6" class="editor-input w-full p-1 border rounded text-sm font-mono text-xs whitespace-nowrap overflow-x-auto"></textarea>
                         </div>
@@ -181,6 +189,10 @@
         
         // Used to track edits in the UI before saving
         let editingSceneIndex = 0;
+        
+        // Track main audio state for pauseBackground feature
+        let mainAudioPausedByScene = false;
+        let mainAudioResumeTime = 0;
 
         // --- DOM ---
         const refs = {
@@ -271,19 +283,24 @@
             document.querySelector('[data-scope="scene"][data-key="speech"]').value = scene.speech || "";
             document.querySelector('[data-scope="scene"][data-key="audio"]').value = scene.audio || "";
             document.querySelector('[data-scope="scene"][data-key="html"]').value = scene.html || "";
+            document.querySelector('[data-scope="scene"][data-key="pauseBackground"]').checked = scene.pauseBackground || false;
         }
 
         function handleEditorInput(target) {
             const scope = target.dataset.scope;
             const key = target.dataset.key;
-            const val = target.value;
+            const val = target.type === 'checkbox' ? target.checked : target.value;
 
             // Update in-memory object immediately so switching scenes doesn't lose data
             if (scope === 'global') {
                 if (key === 'width' || key === 'height') videoData[key] = parseInt(val);
                 else videoData[key] = val;
             } else if (scope === 'scene') {
-                videoData.scenes[editingSceneIndex][key] = val;
+                if (key === 'pauseBackground') {
+                    videoData.scenes[editingSceneIndex][key] = val;
+                } else {
+                    videoData.scenes[editingSceneIndex][key] = val;
+                }
                 // Update selector text if comment or duration changed
                 if(key === 'comment' || key === 'duration') {
                     const opt = refs.sceneSelect.options[editingSceneIndex];
@@ -434,10 +451,10 @@
             
             currentTimeMs += delta;
 
-            if (currentTimeMs >= totalDurationMs) { 
-                stopPlayback(); 
-                seekTo(totalDurationMs); 
-                return; 
+            if (currentTimeMs >= totalDurationMs) {
+                stopPlayback();
+                seekTo(totalDurationMs);
+                return;
             }
 
             // Determine current scene based on time
@@ -449,9 +466,29 @@
                 }
             }
 
-            if (newIdx !== currentSceneIndex) { 
-                currentSceneIndex = newIdx; 
-                renderScene(newIdx); 
+            if (newIdx !== currentSceneIndex) {
+                const previousScene = processedScenes[currentSceneIndex];
+                const newScene = processedScenes[newIdx];
+                
+                // Handle main audio pause/resume based on pauseBackground
+                if (refs.mainAudio.src) {
+                    // Leaving a scene with pauseBackground - resume main audio
+                    if (previousScene.pauseBackground && mainAudioPausedByScene) {
+                        refs.mainAudio.currentTime = mainAudioResumeTime;
+                        refs.mainAudio.play().catch(()=>{});
+                        mainAudioPausedByScene = false;
+                    }
+                    
+                    // Entering a scene with pauseBackground - pause main audio
+                    if (newScene.pauseBackground && !refs.mainAudio.paused) {
+                        mainAudioResumeTime = refs.mainAudio.currentTime;
+                        refs.mainAudio.pause();
+                        mainAudioPausedByScene = true;
+                    }
+                }
+                
+                currentSceneIndex = newIdx;
+                renderScene(newIdx);
             }
             
             // Update UI
@@ -475,9 +512,20 @@
                 lastTimestamp = 0;
                 if (currentTimeMs >= totalDurationMs) currentTimeMs = 0;
                 
-                if (refs.mainAudio.src) { 
-                    refs.mainAudio.currentTime = currentTimeMs / 1000; 
-                    refs.mainAudio.play().catch(()=>{}); 
+                const currentScene = processedScenes[currentSceneIndex];
+                
+                // Handle main audio based on current scene's pauseBackground setting
+                if (refs.mainAudio.src) {
+                    if (currentScene && currentScene.pauseBackground) {
+                        // Store the current position but don't play main audio
+                        mainAudioResumeTime = currentTimeMs / 1000;
+                        mainAudioPausedByScene = true;
+                    } else {
+                        // Play main audio normally
+                        refs.mainAudio.currentTime = currentTimeMs / 1000;
+                        refs.mainAudio.play().catch(()=>{});
+                        mainAudioPausedByScene = false;
+                    }
                 }
                 
                 // Ensure current scene is rendered and audio potentially started
@@ -496,6 +544,11 @@
             if(animationFrameId) cancelAnimationFrame(animationFrameId);
             refs.mainAudio.pause();
             refs.sceneAudio.pause();
+            
+            // Reset pauseBackground state
+            mainAudioPausedByScene = false;
+            mainAudioResumeTime = 0;
+            
             refs.playBtn.textContent = "Play";
             refs.playBtn.classList.replace('bg-yellow-500', 'bg-green-600');
             refs.playBtn.classList.replace('hover:bg-yellow-600', 'hover:bg-green-700');
