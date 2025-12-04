@@ -1,0 +1,38 @@
+{
+  "comment": "Programming Loops Explainer (5 Scenes)",
+  "width": 1920,
+  "height": 1080,
+  "audio": "data:audio/mpeg;base64,",
+  "scenes": [
+    {
+      "comment": "Scene 1: Introduction to Loops (Fixed)",
+      "html": "<html><body></body></html>",
+      "duration": "4s"
+    },
+    {
+      "comment": "Scene 2: For Loop (Counting/Infographic)",
+      "html": "<html><body></body></html>",
+      "speech": "The for loop is primarily used when you know exactly how many times you need to repeat a block of code. It uses a counter variable to track initialization, condition check, and increment in one line.",
+      "duration": "auto",
+      "audio": "data:audio/mpeg;base64,"
+    },
+    {
+      "comment": "Scene 3: While Loop (Conditional/Infographic)",
+      "html": "<html><body></body></html>",
+      "speech": "The while loop is used for repetition when you don't know the exact count, but you have a specific condition that must remain true for the loop to continue. It checks the condition before every iteration.",
+      "duration": "auto"
+    },
+    {
+      "comment": "Scene 4: Loop Control (Fixed)",
+      "html": "<html><body></body></html>",
+      "duration": "4s",
+      "audio": "data:audio/mpeg;base64,"
+    },
+    {
+      "comment": "Scene 5: Summary and Next Steps (Fixed)",
+      "html": "<html><body></body></html>",
+      "speech": "Congratulations! You now understand the basic concept of programming loops. This powerful tool is essential for automating any repetitive task in your code.",
+      "duration": "auto"
+    }
+  ]
+}
