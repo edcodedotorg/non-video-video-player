@@ -9,7 +9,7 @@
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 
     <script type="module">
-        import json from './example.json' with { type: 'json' }
+        import json from './examples/example.json' with { type: 'json' }
         const jsonTextArea = document.querySelector('#video-json');
         // Only populate if empty (prevents overwriting on reload if browser caches)
         if(!jsonTextArea.value.trim()) {
@@ -50,11 +50,28 @@
                 
                 <div>
                     <h2 class="text-xl font-semibold mb-3 text-gray-700">Video JSON Source</h2>
+                    <p class="text-sm text-gray-600 mb-2">You can load JSON from a file, load one of the saved examples, or paste your own JSON into the textarea.</p>
                     <textarea id="video-json" rows="6" class="w-full p-3 border border-gray-300 rounded-lg text-xs font-mono shadow-inner bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Paste JSON here..."></textarea>
                     <input type="file" id="file-input" accept=".json,application/json" class="hidden">
-                    <div class="flex gap-2 mt-2">
-                        <button id="load-file-btn" class="flex-1 bg-purple-600 text-white py-2 rounded-lg font-semibold hover:bg-purple-700 transition">Load from File</button>
-                        <button id="load-btn" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Load JSON</button>
+                    <hr />
+                    <div class="space-y-2 mt-2">
+                        <select id="example-select" class="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
+                            <option value="">-- Select an example --</option>
+                            <option value="examples/Variables_V1.json">Variables_V1.json</option>
+                            <option value="examples/Functions_V1.json">Functions_V1.json</option>
+                            <option value="examples/While_Loops_V1.json">While_Loops_V1.json</option>
+                            <option value="examples/Conditionals_V1.json">Conditionals_V1.json</option>
+                            <option value="examples/Painter_Object_V1.json">Painter_Object_V1.json</option>
+                            <option value="examples/DEMO_Functions_Addon_With_Sam_Demo.json">DEMO_Functions_Addon_With_Sam_Demo.json</option>
+                            <option value="examples/DEMO_Loops_Core_Sam_No_Human_Loop.json">DEMO_Loops_Core_Sam_No_Human_Loop.json</option>
+                            
+                        </select>
+                        <button id="load-example-btn" class="w-full bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition">Load From Dropdown</button>
+                        <hr />
+                        <button id="load-file-btn" class="w-full bg-purple-600 text-white py-2 rounded-lg font-semibold hover:bg-purple-700 transition">Load JSON from File</button>
+                        <button id="save-file-btn" class="w-full bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition">Save JSON</button>
+                        <hr />
+                        <button id="load-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Load Video</button>
                     </div>
                     <p id="message" class="mt-2 text-sm text-gray-600 min-h-[1.5rem]"></p>
                 </div>
@@ -214,6 +231,9 @@
             downloadBtn: document.getElementById('download-button'),
             loadBtn: document.getElementById('load-btn'),
             loadFileBtn: document.getElementById('load-file-btn'),
+            loadExampleBtn: document.getElementById('load-example-btn'),
+            saveFileBtn: document.getElementById('save-file-btn'),
+            exampleSelect: document.getElementById('example-select'),
             fileInput: document.getElementById('file-input'),
             mainAudio: document.getElementById('main-audio-player'),
             sceneAudio: document.getElementById('scene-audio-player'),
@@ -228,6 +248,8 @@
         // --- HANDLERS ---
         refs.loadBtn.onclick = loadVideo;
         refs.loadFileBtn.onclick = () => refs.fileInput.click();
+        refs.loadExampleBtn.onclick = loadExampleFile;
+        refs.saveFileBtn.onclick = saveJsonToFile;
         refs.fileInput.onchange = handleFileSelect;
         refs.playBtn.onclick = startStop;
         refs.resetBtn.onclick = resetVideo;
@@ -368,6 +390,97 @@
             reader.readAsText(file);
         }
 
+        async function loadExampleFile() {
+            const selectedPath = refs.exampleSelect.value;
+            if (!selectedPath) {
+                refs.msg.textContent = "Please select an example from the dropdown";
+                refs.msg.className = "mt-2 text-sm text-orange-600 font-semibold";
+                return;
+            }
+            
+            try {
+                const response = await fetch(selectedPath);
+                if (!response.ok) {
+                    throw new Error(`Failed to load file: ${response.statusText}`);
+                }
+                const jsonContent = await response.text();
+                
+                // Validate it's valid JSON
+                JSON.parse(jsonContent);
+                
+                // Populate textarea
+                refs.json.value = jsonContent;
+                const fileName = selectedPath.split('/').pop();
+                refs.msg.textContent = `Example "${fileName}" loaded successfully!`;
+                refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
+            } catch (error) {
+                refs.msg.textContent = `Error loading example: ${error.message}`;
+                refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
+            }
+        }
+
+        async function saveJsonToFile() {
+            const jsonContent = refs.json.value;
+            
+            // Validate JSON before saving
+            try {
+                JSON.parse(jsonContent);
+            } catch (error) {
+                refs.msg.textContent = `Cannot save: Invalid JSON - ${error.message}`;
+                refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
+                return;
+            }
+            
+            try {
+                // Check if the File System Access API is supported
+                if ('showSaveFilePicker' in window) {
+                    // Use the modern File System Access API
+                    const options = {
+                        types: [
+                            {
+                                description: 'JSON Files',
+                                accept: {
+                                    'application/json': ['.json'],
+                                },
+                            },
+                        ],
+                        suggestedName: 'video.json',
+                    };
+                    
+                    const fileHandle = await window.showSaveFilePicker(options);
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(jsonContent);
+                    await writable.close();
+                    
+                    refs.msg.textContent = "JSON file saved successfully!";
+                    refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
+                } else {
+                    // Fallback to download link for unsupported browsers
+                    const blob = new Blob([jsonContent], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'video.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    refs.msg.textContent = "JSON file downloaded (browser doesn't support save dialog)";
+                    refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
+                }
+            } catch (error) {
+                // User cancelled the save dialog or another error occurred
+                if (error.name !== 'AbortError') {
+                    refs.msg.textContent = `Error saving file: ${error.message}`;
+                    refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
+                }
+                // If AbortError (user cancelled), don't show an error message
+            }
+        }
+
         // --- VIDEO LOGIC ---
         function parseDuration(str) {
             if (typeof str !== 'string') return 5000;
@@ -422,24 +535,38 @@
             if (scene.audio) {
                 // Only reload if source changed
                 // Use getAttribute to avoid full URL resolution comparison issues
-                const currentSrc = refs.sceneAudio.getAttribute('src'); 
-                if (currentSrc !== scene.audio) { 
-                    refs.sceneAudio.src = scene.audio; 
-                    refs.sceneAudio.load(); 
+                const currentSrc = refs.sceneAudio.getAttribute('src');
+                if (currentSrc !== scene.audio) {
+                    refs.sceneAudio.src = scene.audio;
+                    refs.sceneAudio.load();
                 }
                 
-                if (tScene >= 0 && tScene < (refs.sceneAudio.duration || 999)) {
-                    // Sync if drift is large (>0.2s)
-                    if(Math.abs(refs.sceneAudio.currentTime - tScene) > 0.2) {
-                        refs.sceneAudio.currentTime = tScene;
+                if (tScene >= 0) {
+                    // Only sync if audio metadata is loaded and we're within bounds
+                    const audioDuration = refs.sceneAudio.duration;
+                    const hasValidDuration = !isNaN(audioDuration) && isFinite(audioDuration);
+                    
+                    if (!hasValidDuration || tScene < audioDuration) {
+                        // Safe to seek - either duration unknown or within bounds
+                        if(Math.abs(refs.sceneAudio.currentTime - tScene) > 0.2) {
+                            try {
+                                refs.sceneAudio.currentTime = Math.max(0, tScene);
+                            } catch(e) {
+                                // Seeking might fail if metadata not loaded yet, that's ok
+                            }
+                        }
+                        if (isPlaying && refs.sceneAudio.paused) refs.sceneAudio.play().catch(()=>{});
+                    } else {
+                        // We're past the scene audio duration - pause it
+                        if (!refs.sceneAudio.paused) refs.sceneAudio.pause();
                     }
-                    if (isPlaying && refs.sceneAudio.paused) refs.sceneAudio.play().catch(()=>{});
-                } else if (!refs.sceneAudio.paused) {
-                    refs.sceneAudio.pause();
+                } else {
+                    // Before scene starts
+                    if (!refs.sceneAudio.paused) refs.sceneAudio.pause();
                 }
-            } else { 
-                if(!refs.sceneAudio.paused) refs.sceneAudio.pause(); 
-                refs.sceneAudio.removeAttribute('src'); 
+            } else {
+                if(!refs.sceneAudio.paused) refs.sceneAudio.pause();
+                refs.sceneAudio.removeAttribute('src');
             }
         }
 
@@ -497,8 +624,12 @@
             
             // Check scene audio end
             const scene = processedScenes[currentSceneIndex];
-            if(scene.audio && refs.sceneAudio.duration && (currentTimeMs - scene.startTimeMs)/1000 >= refs.sceneAudio.duration) {
-                refs.sceneAudio.pause();
+            const sceneAudioTime = (currentTimeMs - scene.startTimeMs) / 1000;
+            const sceneAudioDuration = refs.sceneAudio.duration;
+            const hasValidSceneAudioDuration = !isNaN(sceneAudioDuration) && isFinite(sceneAudioDuration);
+            
+            if(scene.audio && hasValidSceneAudioDuration && sceneAudioTime >= sceneAudioDuration) {
+                if (!refs.sceneAudio.paused) refs.sceneAudio.pause();
             }
 
             animationFrameId = requestAnimationFrame(updateFrame);
@@ -564,12 +695,42 @@
             if (idx === -1) idx = 0;
 
             currentSceneIndex = idx;
+            const targetScene = processedScenes[idx];
+            
+            // Handle main audio based on target scene's pauseBackground setting
+            if (refs.mainAudio.src) {
+                const seekTime = currentTimeMs / 1000;
+                const mainAudioDuration = refs.mainAudio.duration;
+                const hasValidMainDuration = !isNaN(mainAudioDuration) && isFinite(mainAudioDuration);
+                
+                if (targetScene && targetScene.pauseBackground) {
+                    // Scene has pauseBackground - pause main audio and store resume time
+                    refs.mainAudio.pause();
+                    mainAudioResumeTime = seekTime;
+                    mainAudioPausedByScene = true;
+                } else {
+                    // Scene doesn't pause background - sync main audio
+                    // Only seek if within valid range or duration not loaded yet
+                    if (!hasValidMainDuration || seekTime < mainAudioDuration) {
+                        try {
+                            refs.mainAudio.currentTime = seekTime;
+                        } catch(e) {
+                            // Seeking might fail, that's ok
+                        }
+                    }
+                    
+                    // If we're playing, ensure main audio is also playing
+                    if (isPlaying && refs.mainAudio.paused) {
+                        refs.mainAudio.play().catch(()=>{});
+                    }
+                    mainAudioPausedByScene = false;
+                }
+            }
+            
             renderScene(idx);
             
             refs.timeline.value = currentTimeMs;
             refs.curTime.textContent = formatTime(currentTimeMs);
-            
-            if (refs.mainAudio.src) refs.mainAudio.currentTime = currentTimeMs / 1000;
         }
 
         function loadVideo() {
