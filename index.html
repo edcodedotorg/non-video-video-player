@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Editor (with UI Controls)</title>
+    <title>Programmatic Video Editor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 
+    <script type="module" src="json-video.js"></script>
+
     <script type="module">
         import json from './examples/example.json' with { type: 'json' }
         const jsonTextArea = document.querySelector('#video-json');
-        // Only populate if empty (prevents overwriting on reload if browser caches)
         if(!jsonTextArea.value.trim()) {
             jsonTextArea.textContent = JSON.stringify(json,null,"    ");
         }
@@ -19,12 +20,6 @@
     <style>
         :root { --primary-color: #3b82f6; }
         body { font-family: 'Inter', sans-serif; background-color: #f3fff6; }
-        #video-container {
-            aspect-ratio: 16 / 9; max-height: 80vh; border: 4px solid #1f2937;
-            border-radius: 0.5rem; overflow: hidden; position: relative;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        }
-        iframe { width: 100%; height: 100%; border: none; background-color: white; pointer-events: none; }
         .loader {
             border: 3px solid #f3f3f3; border-top: 3px solid var(--primary-color);
             border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite;
@@ -33,11 +28,9 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .hidden { display: none; }
         
-        /* Custom Scrollbar for editor */
         .editor-scroll::-webkit-scrollbar { width: 8px; }
         .editor-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
         .editor-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        .editor-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -47,13 +40,11 @@
         <div class="grid grid-cols-1 lg:col-span-3 lg:grid-cols-3 gap-8">
             
             <div class="lg:col-span-1 flex flex-col gap-6">
-                
                 <div>
                     <h2 class="text-xl font-semibold mb-3 text-gray-700">Video JSON Source</h2>
-                    <p class="text-sm text-gray-600 mb-2">You can load JSON from a file, load one of the saved examples, or paste your own JSON into the textarea.</p>
                     <textarea id="video-json" rows="6" class="w-full p-3 border border-gray-300 rounded-lg text-xs font-mono shadow-inner bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Paste JSON here..."></textarea>
                     <input type="file" id="file-input" accept=".json,application/json" class="hidden">
-                    <hr />
+                    
                     <div class="space-y-2 mt-2">
                         <select id="example-select" class="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
                             <option value="">-- Select an example --</option>
@@ -66,7 +57,6 @@
 							<option value="examples/If_Else_V1.json">If_Else_V1.json</option>
                             <option value="examples/DEMO_Functions_Addon_With_Sam_Demo.json">DEMO_Functions_Addon_With_Sam_Demo.json</option>
                             <option value="examples/DEMO_Loops_Core_Sam_No_Human_Loop.json">DEMO_Loops_Core_Sam_No_Human_Loop.json</option>
-                            
                         </select>
                         <button id="load-example-btn" class="w-full bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition">Load From Dropdown</button>
                         <hr />
@@ -84,33 +74,7 @@
                         <button id="save-changes-btn" disabled class="text-xs px-3 py-1 bg-green-600 text-white rounded disabled:bg-gray-300 disabled:text-gray-500 hover:bg-green-700 transition">Save Changes</button>
                     </h2>
                     
-                    <div class="mb-4 space-y-2 border-b pb-4">
-                        <h3 class="text-xs uppercase font-bold text-gray-500 tracking-wider">Global Settings</h3>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block text-xs font-medium text-gray-700">Width</label>
-                                <input type="number" data-scope="global" data-key="width" class="editor-input w-full p-1 border rounded text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-gray-700">Height</label>
-                                <input type="number" data-scope="global" data-key="height" class="editor-input w-full p-1 border rounded text-sm">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-700">Comment</label>
-                            <input type="text" data-scope="global" data-key="comment" class="editor-input w-full p-1 border rounded text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-700">Audio URL</label>
-                            <input type="text" data-scope="global" data-key="audio" class="editor-input w-full p-1 border rounded text-sm">
-                        </div>
-                    </div>
-
                     <div class="space-y-3">
-                        <div class="flex justify-between items-end">
-                            <h3 class="text-xs uppercase font-bold text-gray-500 tracking-wider">Current Scene</h3>
-                        </div>
-                        
                         <select id="scene-select" class="w-full p-2 border border-blue-300 bg-blue-50 rounded text-sm font-semibold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
 
                         <div class="grid grid-cols-2 gap-2">
@@ -130,55 +94,33 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-medium text-gray-700">Scene Audio URL</label>
-                            <input type="text" data-scope="scene" data-key="audio" class="editor-input w-full p-1 border rounded text-sm">
-                        </div>
-
-                        <div>
-                            <label class="flex items-center text-xs font-medium text-gray-700">
-                                <input type="checkbox" data-scope="scene" data-key="pauseBackground" class="editor-input w-4 h-4 text-blue-600 rounded focus:ring-blue-500 mr-2">
-                                Pause Background Audio
-                            </label>
-                            <p class="text-xs text-gray-500 mt-1">When checked, the overall background audio will pause during this scene</p>
-                        </div>
-
-                        <div>
                             <label class="block text-xs font-medium text-gray-700">HTML Content</label>
                             <textarea data-scope="scene" data-key="html" rows="6" class="editor-input w-full p-1 border rounded text-sm font-mono text-xs whitespace-nowrap overflow-x-auto"></textarea>
                         </div>
                     </div>
                 </div>
-
-                <audio id="main-audio-player" style="display: none;"></audio>
-                <audio id="scene-audio-player" style="display: none;"></audio>
             </div>
 
             <div class="lg:col-span-2">
-                <div id="video-container" class="mb-4 bg-gray-900">
-                    <iframe id="scene-renderer" src="about:blank" scrolling="no"></iframe>
-                    <div id="closed-caption-overlay" class="absolute inset-x-0 bottom-4 px-4 text-center pointer-events-none hidden">
-                         <span class="inline-block bg-black bg-opacity-70 text-white text-lg px-3 py-1 rounded box-decoration-clone"></span>
-                    </div>
-                </div>
+                <json-video id="player" class="mb-4"></json-video>
 
                 <div class="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <div class="flex items-center space-x-4">
                         <span id="current-time-display" class="text-sm font-mono w-16 text-right text-gray-600">00:00.0</span>
-                        <input type="range" id="timeline" min="0" max="1000" value="0" step="1" class="flex-grow h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                        <input type="range" id="timeline" min="0" max="100" value="0" step="0.1" class="flex-grow h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600">
                         <span id="total-duration-display" class="text-sm font-mono w-16 text-gray-600">--:--.-</span>
                     </div>
                     <div class="flex justify-between items-center">
                         <div class="space-x-2">
-                            <button id="play-pause-btn" disabled class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm">Play</button>
-                            <button id="reset-btn" disabled class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm">Reset</button>
+                            <button id="play-pause-btn" disabled class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:bg-gray-300 transition shadow-sm">Play</button>
+                            <button id="reset-btn" disabled class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold disabled:bg-gray-300 transition shadow-sm">Reset</button>
                         </div>
                         <div class="flex items-center space-x-4">
                             <div class="flex items-center">
                                 <input type="checkbox" id="cc-toggle" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
                                 <label for="cc-toggle" class="ml-2 text-sm font-medium text-gray-700 select-none">Captions</label>
                             </div>
-                            <button id="encode-button" disabled class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition shadow-sm flex items-center">
-                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                            <button id="encode-button" disabled class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold disabled:bg-gray-300 transition shadow-sm flex items-center">
                                 Export MP4
                             </button>
                         </div>
@@ -197,719 +139,201 @@
         </div>
     </div>
 
-   <script>
-        // --- GLOBALS ---
-        let ffmpeg = null;
-        const FPS = 10;
-        const FRAME_DURATION = 1000 / FPS;
-        let videoData = null, processedScenes = [], totalDurationMs = 0;
-        let isPlaying = false, currentTimeMs = 0, currentSceneIndex = 0;
-        let animationFrameId = null, lastTimestamp = 0;
-        
-        // Used to track edits in the UI before saving
-        let editingSceneIndex = 0;
-        
-        // Track main audio state for pauseBackground feature
-        let mainAudioPausedByScene = false;
-        let mainAudioResumeTime = 0;
+    <script type="module">
+        const player = document.getElementById('player');
+        const jsonArea = document.getElementById('video-json');
+        const playBtn = document.getElementById('play-pause-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const encodeBtn = document.getElementById('encode-button');
+        const timeline = document.getElementById('timeline');
+        const curTimeDisplay = document.getElementById('current-time-display');
+        const totTimeDisplay = document.getElementById('total-duration-display');
+        const msg = document.getElementById('message');
+        const editorPanel = document.getElementById('editor-panel');
+        const sceneSelect = document.getElementById('scene-select');
+        const saveChangesBtn = document.getElementById('save-changes-btn');
 
-        // --- DOM ---
-        const refs = {
-            json: document.getElementById('video-json'),
-            msg: document.getElementById('message'),
-            renderer: document.getElementById('scene-renderer'),
-            timeline: document.getElementById('timeline'),
-            curTime: document.getElementById('current-time-display'),
-            totTime: document.getElementById('total-duration-display'),
-            playBtn: document.getElementById('play-pause-btn'),
-            resetBtn: document.getElementById('reset-btn'),
-            encodeBtn: document.getElementById('encode-button'),
-            ccOverlay: document.getElementById('closed-caption-overlay'),
-            ccToggle: document.getElementById('cc-toggle'),
-            statusPanel: document.getElementById('encoding-status-panel'),
-            statusEl: document.getElementById('status-message'),
-            outputContainer: document.getElementById('video-output-container'),
-            outputVideo: document.getElementById('output-video'),
-            downloadBtn: document.getElementById('download-button'),
-            loadBtn: document.getElementById('load-btn'),
-            loadFileBtn: document.getElementById('load-file-btn'),
-            loadExampleBtn: document.getElementById('load-example-btn'),
-            saveFileBtn: document.getElementById('save-file-btn'),
-            exampleSelect: document.getElementById('example-select'),
-            fileInput: document.getElementById('file-input'),
-            mainAudio: document.getElementById('main-audio-player'),
-            sceneAudio: document.getElementById('scene-audio-player'),
-            container: document.getElementById('video-container'),
-            // Editor Refs
-            editorPanel: document.getElementById('editor-panel'),
-            sceneSelect: document.getElementById('scene-select'),
-            saveBtn: document.getElementById('save-changes-btn'),
-            editorInputs: document.querySelectorAll('.editor-input')
+        let videoData = null;
+        let ffmpeg = null;
+        let editingIdx = 0;
+
+        // --- Core Load Action ---
+        document.getElementById('load-btn').onclick = () => {
+            const rawJson = jsonArea.value.trim();
+            try {
+                videoData = JSON.parse(rawJson);
+                // 1. Set the source as a data URI for direct loading without fetch
+                player.src = "data:application/json," + encodeURIComponent(rawJson);
+                // 2. Explicitly call load() to start processing
+                player.load();
+
+                playBtn.disabled = resetBtn.disabled = encodeBtn.disabled = false;
+                msg.textContent = "Video Loaded Successfully!";
+                msg.className = "mt-2 text-sm text-green-600 font-semibold";
+                initEditor();
+            } catch(e) { 
+                msg.textContent = "Error: " + e.message;
+                msg.className = "mt-2 text-sm text-red-600 font-semibold";
+            }
         };
 
-        // --- HANDLERS ---
-        refs.loadBtn.onclick = loadVideo;
-        refs.loadFileBtn.onclick = () => refs.fileInput.click();
-        refs.loadExampleBtn.onclick = loadExampleFile;
-        refs.saveFileBtn.onclick = saveJsonToFile;
-        refs.fileInput.onchange = handleFileSelect;
-        refs.playBtn.onclick = startStop;
-        refs.resetBtn.onclick = resetVideo;
-        refs.encodeBtn.onclick = encodeVideo;
-        refs.timeline.oninput = (e) => seekTo(e.target.value);
-        refs.ccToggle.onclick = () => { if(videoData) renderScene(currentSceneIndex); };
-        
-        // Editor Handlers
-        refs.sceneSelect.onchange = (e) => loadSceneInEditor(parseInt(e.target.value));
-        refs.editorInputs.forEach(input => {
-            input.addEventListener('input', (e) => handleEditorInput(e.target));
-        });
-        refs.saveBtn.onclick = saveChanges;
-
-
-        // --- EDITOR LOGIC ---
-
-        function initEditor() {
-            refs.editorPanel.classList.remove('hidden');
-            refs.saveBtn.disabled = true;
-            refs.saveBtn.textContent = "Save Changes";
-            refs.saveBtn.classList.remove('bg-yellow-500');
-            refs.saveBtn.classList.add('bg-green-600');
-
-            // Populate Global Settings
-            document.querySelector('[data-scope="global"][data-key="width"]').value = videoData.width || 1920;
-            document.querySelector('[data-scope="global"][data-key="height"]').value = videoData.height || 1080;
-            document.querySelector('[data-scope="global"][data-key="comment"]').value = videoData.comment || "";
-            document.querySelector('[data-scope="global"][data-key="audio"]').value = videoData.audio || "";
-
-            // Populate Scene Selector
-            refs.sceneSelect.innerHTML = '';
-            videoData.scenes.forEach((scene, index) => {
-                const opt = document.createElement('option');
-                opt.value = index;
-                const name = scene.comment || `Scene ${index + 1}`;
-                const dur = scene.duration === 'auto' ? '(Auto)' : scene.duration;
-                opt.textContent = `${index + 1}. ${name} [${dur}]`;
-                refs.sceneSelect.appendChild(opt);
+        // --- Standard File/Example Events ---
+        document.getElementById('load-example-btn').onclick = () => {
+            const path = document.getElementById('example-select').value;
+            if(!path) return;
+            player.src = path;
+            player.load();
+            
+            // Sync the textarea for the editor logic
+            fetch(path).then(r => r.text()).then(t => {
+                jsonArea.value = t;
+                videoData = JSON.parse(t);
+                initEditor();
+                playBtn.disabled = resetBtn.disabled = encodeBtn.disabled = false;
             });
+        };
 
-            // Load first scene
-            loadSceneInEditor(0);
-        }
-
-        function loadSceneInEditor(index) {
-            if(!videoData || !videoData.scenes[index]) return;
-            editingSceneIndex = index;
-            const scene = videoData.scenes[index];
-
-            document.querySelector('[data-scope="scene"][data-key="duration"]').value = scene.duration || "auto";
-            document.querySelector('[data-scope="scene"][data-key="comment"]').value = scene.comment || "";
-            document.querySelector('[data-scope="scene"][data-key="speech"]').value = scene.speech || "";
-            document.querySelector('[data-scope="scene"][data-key="audio"]').value = scene.audio || "";
-            document.querySelector('[data-scope="scene"][data-key="html"]').value = scene.html || "";
-            document.querySelector('[data-scope="scene"][data-key="pauseBackground"]').checked = scene.pauseBackground || false;
-        }
-
-        function handleEditorInput(target) {
-            const scope = target.dataset.scope;
-            const key = target.dataset.key;
-            const val = target.type === 'checkbox' ? target.checked : target.value;
-
-            // Update in-memory object immediately so switching scenes doesn't lose data
-            if (scope === 'global') {
-                if (key === 'width' || key === 'height') videoData[key] = parseInt(val);
-                else videoData[key] = val;
-            } else if (scope === 'scene') {
-                if (key === 'pauseBackground') {
-                    videoData.scenes[editingSceneIndex][key] = val;
-                } else {
-                    videoData.scenes[editingSceneIndex][key] = val;
-                }
-                // Update selector text if comment or duration changed
-                if(key === 'comment' || key === 'duration') {
-                    const opt = refs.sceneSelect.options[editingSceneIndex];
-                    const name = videoData.scenes[editingSceneIndex].comment || `Scene ${editingSceneIndex + 1}`;
-                    const dur = videoData.scenes[editingSceneIndex].duration === 'auto' ? '(Auto)' : videoData.scenes[editingSceneIndex].duration;
-                    opt.textContent = `${editingSceneIndex + 1}. ${name} [${dur}]`;
-                }
-            }
-
-            refs.saveBtn.disabled = false;
-            refs.saveBtn.textContent = "Save Changes *";
-            refs.saveBtn.classList.remove('bg-green-600');
-            refs.saveBtn.classList.add('bg-yellow-500');
-        }
-
-        function saveChanges() {
-            // formatting
-            const jsonStr = JSON.stringify(videoData, null, 4);
-            refs.json.value = jsonStr;
-            
-            refs.saveBtn.disabled = true;
-            refs.saveBtn.textContent = "Saved!";
-            setTimeout(() => { refs.saveBtn.textContent = "Save Changes"; refs.saveBtn.classList.add('bg-green-600'); refs.saveBtn.classList.remove('bg-yellow-500'); }, 1000);
-
-            // Reload the video to reflect changes (recalculate durations, etc)
-            loadVideo();
-        }
-
-
-        // --- FILE LOADING ---
-        function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            // Validate it's a JSON file
-            if (!file.name.endsWith('.json') && file.type !== 'application/json') {
-                refs.msg.textContent = "Please select a valid JSON file";
-                refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
-                return;
-            }
-            
+        document.getElementById('load-file-btn').onclick = () => document.getElementById('file-input').click();
+        document.getElementById('file-input').onchange = (e) => {
             const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const content = e.target.result;
-                    // Validate it's valid JSON
-                    JSON.parse(content);
-                    // Populate textarea
-                    refs.json.value = content;
-                    refs.msg.textContent = `File "${file.name}" loaded successfully!`;
-                    refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
-                    // Reset file input so the same file can be selected again
-                    refs.fileInput.value = '';
-                } catch (error) {
-                    refs.msg.textContent = `Error parsing JSON: ${error.message}`;
-                    refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
-                    refs.fileInput.value = '';
-                }
+            reader.onload = (ev) => { 
+                jsonArea.value = ev.target.result; 
+                document.getElementById('load-btn').click(); 
             };
-            reader.onerror = () => {
-                refs.msg.textContent = "Error reading file";
-                refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
-                refs.fileInput.value = '';
-            };
-            reader.readAsText(file);
-        }
+            reader.readAsText(e.target.files[0]);
+        };
 
-        async function loadExampleFile() {
-            const selectedPath = refs.exampleSelect.value;
-            if (!selectedPath) {
-                refs.msg.textContent = "Please select an example from the dropdown";
-                refs.msg.className = "mt-2 text-sm text-orange-600 font-semibold";
-                return;
-            }
-            
-            try {
-                const response = await fetch(selectedPath);
-                if (!response.ok) {
-                    throw new Error(`Failed to load file: ${response.statusText}`);
-                }
-                const jsonContent = await response.text();
-                
-                // Validate it's valid JSON
-                JSON.parse(jsonContent);
-                
-                // Populate textarea
-                refs.json.value = jsonContent;
-                const fileName = selectedPath.split('/').pop();
-                refs.msg.textContent = `Example "${fileName}" loaded successfully!`;
-                refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
-            } catch (error) {
-                refs.msg.textContent = `Error loading example: ${error.message}`;
-                refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
-            }
-        }
+        document.getElementById('save-file-btn').onclick = () => {
+            const blob = new Blob([jsonArea.value], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'video.json';
+            a.click();
+        };
 
-        async function saveJsonToFile() {
-            const jsonContent = refs.json.value;
-            
-            // Validate JSON before saving
-            try {
-                JSON.parse(jsonContent);
-            } catch (error) {
-                refs.msg.textContent = `Cannot save: Invalid JSON - ${error.message}`;
-                refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
-                return;
-            }
-            
-            try {
-                // Check if the File System Access API is supported
-                if ('showSaveFilePicker' in window) {
-                    // Use the modern File System Access API
-                    const options = {
-                        types: [
-                            {
-                                description: 'JSON Files',
-                                accept: {
-                                    'application/json': ['.json'],
-                                },
-                            },
-                        ],
-                        suggestedName: 'video.json',
-                    };
-                    
-                    const fileHandle = await window.showSaveFilePicker(options);
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(jsonContent);
-                    await writable.close();
-                    
-                    refs.msg.textContent = "JSON file saved successfully!";
-                    refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
-                } else {
-                    // Fallback to download link for unsupported browsers
-                    const blob = new Blob([jsonContent], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'video.json';
-                    document.body.appendChild(a);
-                    a.click();
-                    
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    
-                    refs.msg.textContent = "JSON file downloaded (browser doesn't support save dialog)";
-                    refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
-                }
-            } catch (error) {
-                // User cancelled the save dialog or another error occurred
-                if (error.name !== 'AbortError') {
-                    refs.msg.textContent = `Error saving file: ${error.message}`;
-                    refs.msg.className = "mt-2 text-sm text-red-600 font-semibold";
-                }
-                // If AbortError (user cancelled), don't show an error message
-            }
-        }
+        // --- Sync UI with Player Component Events ---
+        player.addEventListener('loadedmetadata', () => {
+            timeline.max = player.duration;
+            totTimeDisplay.textContent = formatTime(player.duration);
+        });
 
-        // --- VIDEO LOGIC ---
-        function parseDuration(str) {
-            if (typeof str !== 'string') return 5000;
-            const match = str.match(/^(\d+(\.\d+)?)(s)$/i);
-            return match ? parseFloat(match[1]) * 1000 : 5000;
-        }
+        player.addEventListener('timeupdate', () => {
+            timeline.value = player.currentTime;
+            curTimeDisplay.textContent = formatTime(player.currentTime);
+        });
 
-        function calculateSceneDurations(data) {
-            processedScenes = [];
-            totalDurationMs = 0;
-            const msPerWord = 350; // Adjusted for speed
-            data.scenes.forEach(scene => {
-                let dur = scene.duration === "auto" || !scene.duration
-                    ? (scene.speech ? Math.max(2000, scene.speech.split(/\s+/).filter(w => w.length).length * msPerWord) : 2000)
-                    : parseDuration(scene.duration);
-                
-                const startTimeMs = totalDurationMs;
-                totalDurationMs += dur;
-                processedScenes.push({ ...scene, durationMs: dur, startTimeMs: startTimeMs, endTimeMs: totalDurationMs });
-            });
-            refs.timeline.max = totalDurationMs;
-            refs.totTime.textContent = formatTime(totalDurationMs);
-        }
+        player.addEventListener('play', () => {
+            playBtn.textContent = "Pause";
+            playBtn.classList.replace('bg-green-600', 'bg-yellow-500');
+        });
+
+        player.addEventListener('pause', () => {
+            playBtn.textContent = "Play";
+            playBtn.classList.replace('bg-yellow-500', 'bg-green-600');
+        });
+
+        playBtn.onclick = () => player.paused ? player.play() : player.pause();
+        resetBtn.onclick = () => player.currentTime = 0;
+        timeline.oninput = (e) => player.currentTime = parseFloat(e.target.value);
+        document.getElementById('cc-toggle').onclick = (e) => player.setCaptions(e.target.checked);
 
         function formatTime(ms) {
-            if (isNaN(ms) || ms < 0) return "00:00.0";
-            const s = Math.floor(ms / 1000), m = Math.floor(s / 60), sec = s % 60, tenths = Math.floor((ms % 1000) / 100);
-            return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}.${tenths}`;
+            const s = Math.floor(ms / 1000), m = Math.floor(s / 60), sec = s % 60, t = Math.floor((ms % 1000) / 100);
+            return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}.${t}`;
         }
 
-        function renderScene(index) {
-            if (index < 0 || index >= processedScenes.length) return;
-            const scene = processedScenes[index];
-            
-            // Update Aspect Ratio on Container
-            if(videoData.width && videoData.height) {
-                refs.container.style.aspectRatio = `${videoData.width} / ${videoData.height}`;
-            }
-
-            const doc = refs.renderer.contentDocument;
-            doc.open();
-            doc.write(scene.html);
-            doc.close();
-            if(doc.body) { doc.body.style.margin = '0'; doc.body.style.overflow = 'hidden'; }
-
-            const ccSpan = refs.ccOverlay.querySelector('span');
-            ccSpan.textContent = scene.speech || "";
-            refs.ccOverlay.style.display = (refs.ccToggle.checked && scene.speech) ? 'block' : 'none';
-
-            // Handle Scene Audio
-            const tScene = (currentTimeMs - scene.startTimeMs) / 1000;
-            if (scene.audio) {
-                // Only reload if source changed
-                // Use getAttribute to avoid full URL resolution comparison issues
-                const currentSrc = refs.sceneAudio.getAttribute('src');
-                if (currentSrc !== scene.audio) {
-                    refs.sceneAudio.src = scene.audio;
-                    refs.sceneAudio.load();
-                }
-                
-                if (tScene >= 0) {
-                    // Only sync if audio metadata is loaded and we're within bounds
-                    const audioDuration = refs.sceneAudio.duration;
-                    const hasValidDuration = !isNaN(audioDuration) && isFinite(audioDuration);
-                    
-                    if (!hasValidDuration || tScene < audioDuration) {
-                        // Safe to seek - either duration unknown or within bounds
-                        if(Math.abs(refs.sceneAudio.currentTime - tScene) > 0.2) {
-                            try {
-                                refs.sceneAudio.currentTime = Math.max(0, tScene);
-                            } catch(e) {
-                                // Seeking might fail if metadata not loaded yet, that's ok
-                            }
-                        }
-                        if (isPlaying && refs.sceneAudio.paused) refs.sceneAudio.play().catch(()=>{});
-                    } else {
-                        // We're past the scene audio duration - pause it
-                        if (!refs.sceneAudio.paused) refs.sceneAudio.pause();
-                    }
-                } else {
-                    // Before scene starts
-                    if (!refs.sceneAudio.paused) refs.sceneAudio.pause();
-                }
-            } else {
-                if(!refs.sceneAudio.paused) refs.sceneAudio.pause();
-                refs.sceneAudio.removeAttribute('src');
-            }
+        // --- Editor Sidebar Logic ---
+        function initEditor() {
+            editorPanel.classList.remove('hidden');
+            sceneSelect.innerHTML = videoData.scenes.map((s, i) => `<option value="${i}">${i+1}. ${s.comment || 'Scene'}</option>`).join('');
+            loadSceneIntoInputs(0);
         }
 
-        function updateFrame(ts) {
-            if (!isPlaying) return;
-            if (!lastTimestamp) lastTimestamp = ts;
-            const delta = ts - lastTimestamp;
-            lastTimestamp = ts;
-            
-            currentTimeMs += delta;
+        sceneSelect.onchange = (e) => loadSceneIntoInputs(parseInt(e.target.value));
 
-            if (currentTimeMs >= totalDurationMs) {
-                stopPlayback();
-                seekTo(totalDurationMs);
-                return;
-            }
-
-            // Determine current scene based on time
-            let newIdx = 0;
-            for(let i=0; i<processedScenes.length; i++) {
-                if(currentTimeMs < processedScenes[i].endTimeMs) {
-                    newIdx = i;
-                    break;
-                }
-            }
-
-            if (newIdx !== currentSceneIndex) {
-                const previousScene = processedScenes[currentSceneIndex];
-                const newScene = processedScenes[newIdx];
-                
-                // Handle main audio pause/resume based on pauseBackground
-                if (refs.mainAudio.src) {
-                    // Leaving a scene with pauseBackground - resume main audio
-                    if (previousScene.pauseBackground && mainAudioPausedByScene) {
-                        refs.mainAudio.currentTime = mainAudioResumeTime;
-                        refs.mainAudio.play().catch(()=>{});
-                        mainAudioPausedByScene = false;
-                    }
-                    
-                    // Entering a scene with pauseBackground - pause main audio
-                    if (newScene.pauseBackground && !refs.mainAudio.paused) {
-                        mainAudioResumeTime = refs.mainAudio.currentTime;
-                        refs.mainAudio.pause();
-                        mainAudioPausedByScene = true;
-                    }
-                }
-                
-                currentSceneIndex = newIdx;
-                renderScene(newIdx);
-            }
-            
-            // Update UI
-            refs.timeline.value = currentTimeMs;
-            refs.curTime.textContent = formatTime(currentTimeMs);
-            
-            // Check scene audio end
-            const scene = processedScenes[currentSceneIndex];
-            const sceneAudioTime = (currentTimeMs - scene.startTimeMs) / 1000;
-            const sceneAudioDuration = refs.sceneAudio.duration;
-            const hasValidSceneAudioDuration = !isNaN(sceneAudioDuration) && isFinite(sceneAudioDuration);
-            
-            if(scene.audio && hasValidSceneAudioDuration && sceneAudioTime >= sceneAudioDuration) {
-                if (!refs.sceneAudio.paused) refs.sceneAudio.pause();
-            }
-
-            animationFrameId = requestAnimationFrame(updateFrame);
-        }
-
-        function startStop() {
-            if (!videoData) return;
-            if (isPlaying) stopPlayback();
-            else {
-                isPlaying = true;
-                lastTimestamp = 0;
-                if (currentTimeMs >= totalDurationMs) currentTimeMs = 0;
-                
-                const currentScene = processedScenes[currentSceneIndex];
-                
-                // Handle main audio based on current scene's pauseBackground setting
-                if (refs.mainAudio.src) {
-                    if (currentScene && currentScene.pauseBackground) {
-                        // Store the current position but don't play main audio
-                        mainAudioResumeTime = currentTimeMs / 1000;
-                        mainAudioPausedByScene = true;
-                    } else {
-                        // Play main audio normally
-                        refs.mainAudio.currentTime = currentTimeMs / 1000;
-                        refs.mainAudio.play().catch(()=>{});
-                        mainAudioPausedByScene = false;
-                    }
-                }
-                
-                // Ensure current scene is rendered and audio potentially started
-                renderScene(currentSceneIndex);
-
-                refs.playBtn.textContent = "Pause";
-                refs.playBtn.classList.replace('bg-green-600', 'bg-yellow-500');
-                refs.playBtn.classList.replace('hover:bg-green-700', 'hover:bg-yellow-600');
-                
-                animationFrameId = requestAnimationFrame(updateFrame);
-            }
-        }
-
-        function stopPlayback() {
-            isPlaying = false;
-            if(animationFrameId) cancelAnimationFrame(animationFrameId);
-            refs.mainAudio.pause();
-            refs.sceneAudio.pause();
-            
-            // Reset pauseBackground state
-            mainAudioPausedByScene = false;
-            mainAudioResumeTime = 0;
-            
-            refs.playBtn.textContent = "Play";
-            refs.playBtn.classList.replace('bg-yellow-500', 'bg-green-600');
-            refs.playBtn.classList.replace('hover:bg-yellow-600', 'hover:bg-green-700');
-        }
-
-        function seekTo(val) {
-            currentTimeMs = parseInt(val);
-            
-            // Find scene for this time
-            let idx = processedScenes.findIndex(s => currentTimeMs >= s.startTimeMs && currentTimeMs < s.endTimeMs);
-            // Handle end of video case
-            if (idx === -1 && currentTimeMs >= totalDurationMs) idx = processedScenes.length - 1;
-            if (idx === -1) idx = 0;
-
-            currentSceneIndex = idx;
-            const targetScene = processedScenes[idx];
-            
-            // Handle main audio based on target scene's pauseBackground setting
-            if (refs.mainAudio.src) {
-                const seekTime = currentTimeMs / 1000;
-                const mainAudioDuration = refs.mainAudio.duration;
-                const hasValidMainDuration = !isNaN(mainAudioDuration) && isFinite(mainAudioDuration);
-                
-                if (targetScene && targetScene.pauseBackground) {
-                    // Scene has pauseBackground - pause main audio and store resume time
-                    refs.mainAudio.pause();
-                    mainAudioResumeTime = seekTime;
-                    mainAudioPausedByScene = true;
-                } else {
-                    // Scene doesn't pause background - sync main audio
-                    // Only seek if within valid range or duration not loaded yet
-                    if (!hasValidMainDuration || seekTime < mainAudioDuration) {
-                        try {
-                            refs.mainAudio.currentTime = seekTime;
-                        } catch(e) {
-                            // Seeking might fail, that's ok
-                        }
-                    }
-                    
-                    // If we're playing, ensure main audio is also playing
-                    if (isPlaying && refs.mainAudio.paused) {
-                        refs.mainAudio.play().catch(()=>{});
-                    }
-                    mainAudioPausedByScene = false;
-                }
-            }
-            
-            renderScene(idx);
-            
-            refs.timeline.value = currentTimeMs;
-            refs.curTime.textContent = formatTime(currentTimeMs);
-        }
-
-        function loadVideo() {
-            stopPlayback();
-            try {
-                const data = JSON.parse(refs.json.value.trim());
-                if (!data.scenes || !data.scenes.length) throw new Error("No scenes found");
-                videoData = data;
-                calculateSceneDurations(data);
-                
-                if (videoData.audio) { 
-                    refs.mainAudio.src = videoData.audio; 
-                    refs.mainAudio.load(); 
-                } else {
-                    refs.mainAudio.removeAttribute('src');
-                }
-                
-                currentSceneIndex = 0; currentTimeMs = 0; seekTo(0);
-                refs.playBtn.disabled = refs.resetBtn.disabled = refs.encodeBtn.disabled = false;
-                refs.msg.textContent = "Video Loaded Successfully!"; refs.msg.className = "mt-2 text-sm text-green-600 font-semibold";
-                
-                initEditor();
-
-            } catch(e) { 
-                console.error(e);
-                refs.msg.textContent = "Error loading JSON: " + e.message; refs.msg.className = "mt-2 text-sm text-red-600 font-semibold"; 
-                refs.playBtn.disabled = refs.resetBtn.disabled = refs.encodeBtn.disabled = true;
-            }
-        }
-
-        function resetVideo() { stopPlayback(); seekTo(0); }
-
-        // --- ENCODING LOGIC ---
-
-        async function initFFmpeg() {
-            if (ffmpeg) return;
-            const { createFFmpeg } = FFmpeg;
-            ffmpeg = createFFmpeg({
-                log: true,
-                corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
-                mainName: 'main'
+        function loadSceneIntoInputs(idx) {
+            editingIdx = idx;
+            const s = videoData.scenes[idx];
+            document.querySelectorAll('.editor-input').forEach(el => {
+                el.value = s[el.dataset.key] || '';
             });
-            await ffmpeg.load();
         }
 
-        async function captureFrame(t, count) {
-            seekTo(t);
-            // Delay for DOM rendering
-            await new Promise(r => setTimeout(r, 120)); 
+        document.querySelectorAll('.editor-input').forEach(el => {
+            el.oninput = () => {
+                saveChangesBtn.disabled = false;
+                saveChangesBtn.classList.add('bg-yellow-500');
+            };
+        });
 
-            const canvas = await html2canvas(refs.container, {
-                ignoreElements: el => el.id === 'scene-renderer',
-                useCORS: true, allowTaint: true,
-                backgroundColor: null,
-                onclone: (clonedDoc) => {
-                    const ifr = refs.renderer;
-                    const cContainer = clonedDoc.getElementById('video-container');
-                    const cIfr = clonedDoc.getElementById('scene-renderer');
-                    if (ifr && cContainer) {
-                        const div = clonedDoc.createElement('div');
-                        Object.assign(div.style, {
-                            width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, backgroundColor: 'white'
-                        });
-                        
-                        try {
-                            if(ifr.contentDocument && ifr.contentDocument.documentElement) {
-                                // serialize content
-                                div.innerHTML = ifr.contentDocument.documentElement.outerHTML;
-                            }
-                        } catch(e) { console.warn("Cross-origin iframe access blocked"); }
-                        
-                        cContainer.insertBefore(div, cIfr);
-                        if(cIfr) cIfr.style.display = 'none';
-                        
-                        const cc = clonedDoc.getElementById('closed-caption-overlay');
-                        if(cc) {
-                            cc.style.display = (refs.ccToggle.checked && refs.ccOverlay.querySelector('span').textContent) ? 'block' : 'none';
-                        }
-                    }
-                }
-            });
+        saveChangesBtn.onclick = () => {
+            const s = videoData.scenes[editingIdx];
+            document.querySelectorAll('.editor-input').forEach(el => s[el.dataset.key] = el.value);
+            jsonArea.value = JSON.stringify(videoData, null, 4);
+            saveChangesBtn.disabled = true;
+            saveChangesBtn.classList.remove('bg-yellow-500');
+            document.getElementById('load-btn').click();
+        };
 
-            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
-            const buf = await blob.arrayBuffer();
-            const fname = `frame_${String(count).padStart(4,'0')}.jpg`;
-            ffmpeg.FS('writeFile', fname, new Uint8Array(buf));
-        }
-
+        // --- FFmpeg Export Logic ---
         async function encodeVideo() {
-            if (!videoData) return;
-            stopPlayback();
-            refs.encodeBtn.disabled = true;
-            refs.statusPanel.classList.remove('hidden');
-            refs.outputContainer.classList.add('hidden');
-            refs.statusEl.innerHTML = '<div class="loader"></div> Loading FFmpeg...';
+            player.pause();
+            const statusPanel = document.getElementById('encoding-status-panel');
+            const statusMsg = document.getElementById('status-message');
+            statusPanel.classList.remove('hidden');
+            statusMsg.innerHTML = '<div class="loader"></div> Initializing FFmpeg...';
 
             try {
-                await initFFmpeg();
+                if (!ffmpeg) {
+                    const { createFFmpeg } = FFmpeg;
+                    ffmpeg = createFFmpeg({ 
+                        log: true, 
+                        corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js' 
+                    });
+                    await ffmpeg.load();
+                }
 
-                // Calculate frames
-                // We capture exactly enough frames to fill the duration
-                const totalFrames = Math.floor(totalDurationMs / FRAME_DURATION);
-                let count = 0;
-
-                // Capture Loop
-                // Note: We iterate by count to ensure exact filename sequence 0001, 0002...
+                const FPS = 10;
+                const frameInterval = 1000 / FPS;
+                const totalFrames = Math.floor(player.duration / frameInterval);
+                
                 for (let i = 0; i < totalFrames; i++) {
-                    let t = i * FRAME_DURATION;
-                    count++;
-                    refs.statusEl.innerHTML = `<div class="loader"></div> Capturing Frame ${count} / ${totalFrames}`;
-                    await captureFrame(t, count);
+                    statusMsg.innerHTML = `<div class="loader"></div> Capturing Frame ${i+1}/${totalFrames}`;
+                    player.currentTime = i * frameInterval;
+                    
+                    // Wait for the Shadow DOM iframe to render the content
+                    await new Promise(r => setTimeout(r, 150)); 
+                    
+                    // html2canvas needs to target the internal container inside the Shadow Root
+                    const captureTarget = player.shadowRoot.querySelector('#video-container');
+                    const canvas = await html2canvas(captureTarget, { useCORS: true });
+                    
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                    const arrayBuffer = await blob.arrayBuffer();
+                    ffmpeg.FS('writeFile', `frame_${String(i+1).padStart(4,'0')}.jpg`, new Uint8Array(arrayBuffer));
                 }
 
-                refs.statusEl.innerHTML = '<div class="loader"></div> Encoding MP4...';
+                statusMsg.innerHTML = '<div class="loader"></div> Encoding Final MP4...';
+                await ffmpeg.run('-framerate', '10', '-i', 'frame_%04d.jpg', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output.mp4');
                 
-                // Build FFmpeg arguments
-                const args = [
-                    '-framerate', `${FPS}`,
-                    '-i', 'frame_%04d.jpg'
-                ];
-
-                // Audio handling
-                let hasMainAudio = false;
-                
-                // 1. Main Audio
-                if (videoData.audio && videoData.audio.startsWith('data:audio')) {
-                    try {
-                        const ab = await (await fetch(videoData.audio)).arrayBuffer();
-                        ffmpeg.FS('writeFile', 'main_audio.mp3', new Uint8Array(ab));
-                        hasMainAudio = true;
-                    } catch(e) { console.error("Main Audio processing failed", e); }
-                }
-
-                // We will keep it simple: just use main audio if present for now. 
-                // Complex mixing of scene audio + main audio requires filter_complex which is advanced.
-                // For this demo, we append main audio if available.
-                if(hasMainAudio) {
-                    args.push('-i', 'main_audio.mp3');
-                    // Map video from stream 0, audio from stream 1
-                    args.push('-map', '0:v', '-map', '1:a');
-                    // Stop at shortest (video usually)
-                    args.push('-shortest');
-                    args.push('-c:a', 'aac');
-                }
-
-                // Video Codec Settings for compatibility
-                args.push('-c:v', 'libx264');
-                args.push('-pix_fmt', 'yuv420p'); // Critical for browser/OS support
-                args.push('-preset', 'ultrafast'); // Speed up encoding for demo
-                args.push('output.mp4');
-                
-                await ffmpeg.run(...args);
-
                 const data = ffmpeg.FS('readFile', 'output.mp4');
-                const url = URL.createObjectURL(new Blob([data.buffer], {type: 'video/mp4'}));
-                refs.outputVideo.src = url;
-                refs.downloadBtn.onclick = () => {
-                    const a = document.createElement('a'); a.href = url; a.download = 'video.mp4'; a.click();
-                };
-
-                refs.statusEl.innerHTML = `<span class="text-green-700">✅ Encoding Complete!</span>`;
-                refs.outputContainer.classList.remove('hidden');
-
-                // Cleanup
-                try { ffmpeg.FS('unlink', 'output.mp4'); } catch(e){}
-                if(hasMainAudio) try { ffmpeg.FS('unlink', 'main_audio.mp3'); } catch(e){}
-                for(let i=1; i<=count; i++) try { ffmpeg.FS('unlink', `frame_${String(i).padStart(4,'0')}.jpg`); } catch(e){}
-
+                const outputVideo = document.getElementById('output-video');
+                const outputContainer = document.getElementById('video-output-container');
+                
+                outputVideo.src = URL.createObjectURL(new Blob([data.buffer], {type: 'video/mp4'}));
+                outputContainer.classList.remove('hidden');
+                statusMsg.textContent = "✅ Export Complete!";
             } catch(e) {
-                console.error(e);
-                refs.statusEl.textContent = "Encoding Error: " + e.message;
-                refs.statusEl.className = "text-sm text-red-600 font-bold";
-            } finally {
-                refs.encodeBtn.disabled = false;
-                seekTo(0);
+                statusMsg.textContent = "Error: " + e.message;
             }
         }
+        encodeBtn.onclick = encodeVideo;
+        document.getElementById('download-button').onclick = () => {
+            const a = document.createElement('a');
+            a.href = document.getElementById('output-video').src;
+            a.download = 'video.mp4';
+            a.click();
+        };
     </script>
 </body>
 </html>
