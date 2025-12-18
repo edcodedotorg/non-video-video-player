@@ -3,5 +3,28 @@
 
 ### Setup
 
-This tool can be loaded with a dev server, e.g. the Live Server VSCode extension [here](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) and then by launching the index.html with the dev server (e.g. right click and select "Open with Live Server")
+This tool can be loaded with a dev server. To enable video export you need to enable headers.  I've provided instructions for Microsoft's Live Preview extension for VSCode. https://marketplace.visualstudio.com/items?itemName=ms-vscode.live-server.
 
+(e.g. right click the html files and select "Show Preview" then click the hamburger/three-lines and click "Open in Browser")
+
+### Enable Video Export
+
+A VideoExporter error can occur because the VS Code Live Server extension does not enable the necessary security headers by default. FFmpeg.js (v0.11.x) relies on SharedArrayBuffer, which modern browsers block unless the site is "Cross-Origin Isolated".
+
+To fix this, you must manually configure Live Server to send the COOP and COEP headers.
+
+#### Fix VS Code Live Server Settings
+Open Settings in VS Code (Ctrl + , or Cmd + ,).
+
+Search for Live Server > Settings
+
+Click Edit in settings.json.
+
+Add the following object to your configuration:
+
+```
+"liveServer.settings.CustomHttpHeaders": {
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp"
+}
+```
