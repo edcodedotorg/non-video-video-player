@@ -1,6 +1,8 @@
 import styles from './json-video-styles.js';
 
 export class JsonVideo extends HTMLElement {
+    static get observedAttributes() { return ['src', 'controls']; }
+
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
@@ -14,6 +16,7 @@ export class JsonVideo extends HTMLElement {
         this._lastTimestamp = 0;
         this._animationFrameId = null;
         this._showCaptions = true;
+        this._volume = 1.0;
 
         this._mainAudio = new Audio();
         this._sceneAudio = new Audio();
@@ -28,71 +31,118 @@ export class JsonVideo extends HTMLElement {
         styleElement.textContent = styles;
         const container = document.createElement('div');
         container.id = 'video-container';
+
         container.innerHTML = `
             <iframe id="scene-renderer" src="about:blank" scrolling="no"></iframe>
             <div id="closed-caption-overlay" class="hidden"><span class="cc-text"></span></div>
+            <div id="controls-bar">
+                <div id="progress-container">
+                    <input type="range" id="progress-bar" min="0" max="100" value="0" step="0.1">
+                </div>
+                <div class="controls-row">
+                    <button id="play-btn" class="control-btn"></button>
+                    <div class="volume-control">
+                        <button id="mute-btn" class="control-btn"></button>
+                        <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1">
+                    </div>
+                    <div class="time-display">
+                        <span id="cur-time">0:00</span> / <span id="tot-time">0:00</span>
+                    </div>
+                    <div style="flex-grow: 1;"></div>
+                    <button id="cc-btn" class="control-btn"></button>
+                </div>
+            </div>
         `;
+        
         this.shadowRoot.appendChild(styleElement);
         this.shadowRoot.appendChild(container);
+
         this.renderer = this.shadowRoot.querySelector('#scene-renderer');
         this.ccOverlay = this.shadowRoot.querySelector('#closed-caption-overlay');
         this.ccText = this.shadowRoot.querySelector('.cc-text');
+        
+        this.ui = {
+            playBtn: this.shadowRoot.querySelector('#play-btn'),
+            muteBtn: this.shadowRoot.querySelector('#mute-btn'),
+            progress: this.shadowRoot.querySelector('#progress-bar'),
+            curTime: this.shadowRoot.querySelector('#cur-time'),
+            totTime: this.shadowRoot.querySelector('#tot-time'),
+            volume: this.shadowRoot.querySelector('#volume-slider'),
+            ccBtn: this.shadowRoot.querySelector('#cc-btn')
+        };
+
+        this._bindEvents();
     }
 
-    // Standard Properties
+    _bindEvents() {
+        this.ui.playBtn.onclick = () => this.paused ? this.play() : this.pause();
+        this.ui.progress.oninput = (e) => this.seekTo((parseFloat(e.target.value) / 100) * this._totalDurationMs);
+        this.ui.volume.oninput = (e) => this.volume = parseFloat(e.target.value);
+        
+        this.ui.muteBtn.onclick = () => {
+            if (this.volume > 0) { this._lastVolume = this.volume; this.volume = 0; } 
+            else { this.volume = this._lastVolume || 1.0; }
+        };
+
+        this.ui.ccBtn.onclick = () => {
+            this._showCaptions = !this._showCaptions;
+            this.ui.ccBtn.classList.toggle('disabled', !this._showCaptions);
+            this._renderCurrentScene();
+        };
+
+        this.shadowRoot.querySelector('#video-container').onclick = (e) => {
+            if (e.target.id === 'video-container' || e.target.id === 'scene-renderer') {
+                this.paused ? this.play() : this.pause();
+            }
+        };
+
+        this.addEventListener('play', () => this.classList.add('playing'));
+        this.addEventListener('pause', () => this.classList.remove('playing'));
+        this.addEventListener('timeupdate', () => this._updateUI());
+    }
+
+    // Standard API properties
+    get volume() { return this._volume; }
+    set volume(val) {
+        this._volume = Math.max(0, Math.min(1, val));
+        this._mainAudio.volume = this._volume;
+        this._sceneAudio.volume = this._volume;
+        this.ui.volume.value = this._volume;
+        this.ui.muteBtn.classList.toggle('muted', this.volume === 0);
+    }
+
     get src() { return this.getAttribute('src'); }
     set src(val) { this.setAttribute('src', val); }
-    get currentTime() { return this._currentTimeMs; }
-    set currentTime(ms) { this.seekTo(ms); }
-    get duration() { return this._totalDurationMs; }
+    get currentTime() { return this._currentTimeMs / 1000; }
+    set currentTime(sec) { this.seekTo(sec * 1000); }
+    get duration() { return this._totalDurationMs / 1000; }
     get paused() { return !this._isPlaying; }
 
-    /**
-     * load() follows the native video element pattern.
-     * It uses the current 'src' attribute to decide what to process.
-     */
+    attributeChangedCallback(name, oldVal, newVal) { if (name === 'src' && newVal) this.load(); }
+
     async load() {
         const source = this.src;
         if (!source) return;
-
         this.pause();
         let data = null;
-
         try {
-            // Check for Data URI to avoid fetch/CSP issues
             if (source.startsWith('data:application/json')) {
-                const base64Match = source.match(/data:application\/json;base64,(.*)/);
-                if (base64Match) {
-                    data = JSON.parse(atob(base64Match[1]));
-                } else {
-                    const commaIndex = source.indexOf(',');
-                    data = JSON.parse(decodeURIComponent(source.substring(commaIndex + 1)));
-                }
+                const commaIndex = source.indexOf(',');
+                data = JSON.parse(decodeURIComponent(source.substring(commaIndex + 1)));
             } else {
-                // Remote fetch
                 const response = await fetch(source);
                 data = await response.json();
             }
-
             this._processLoadedData(data);
-        } catch (e) {
-            console.error("JsonVideo load error:", e);
-            this.dispatchEvent(new CustomEvent('error', { detail: e }));
-        }
+        } catch (e) { console.error("JsonVideo load error:", e); }
     }
 
     _processLoadedData(data) {
         this._videoData = data;
         this._calculateDurations();
-        
-        if (data.audio) {
-            this._mainAudio.src = data.audio;
-            this._mainAudio.load();
-        } else {
-            this._mainAudio.removeAttribute('src');
-        }
-
+        if (data.audio) { this._mainAudio.src = data.audio; this._mainAudio.load(); }
         this.seekTo(0);
+        this.ui.totTime.textContent = this._formatTime(this._totalDurationMs);
         this.dispatchEvent(new Event('loadedmetadata'));
     }
 
@@ -110,7 +160,6 @@ export class JsonVideo extends HTMLElement {
         if (this._animationFrameId) cancelAnimationFrame(this._animationFrameId);
         this._mainAudio.pause();
         this._sceneAudio.pause();
-        this._mainAudioPausedByScene = false;
         this.dispatchEvent(new Event('pause'));
     }
 
@@ -121,7 +170,6 @@ export class JsonVideo extends HTMLElement {
         if (idx === -1) idx = 0;
         this._currentSceneIndex = idx;
         const scene = this._processedScenes[idx];
-        
         if (this._mainAudio.src) {
             const seekSec = this._currentTimeMs / 1000;
             if (scene?.pauseBackground) {
@@ -138,9 +186,30 @@ export class JsonVideo extends HTMLElement {
         this.dispatchEvent(new Event('timeupdate'));
     }
 
-    setCaptions(visible) {
-        this._showCaptions = visible;
-        this._renderCurrentScene();
+    _tick(ts) {
+        if (!this._isPlaying) return;
+        const delta = ts - this._lastTimestamp;
+        this._lastTimestamp = ts;
+        this._currentTimeMs += delta;
+        if (this._currentTimeMs >= this._totalDurationMs) {
+            this.pause(); this.seekTo(this._totalDurationMs);
+            this.dispatchEvent(new Event('ended'));
+            return;
+        }
+        const newIdx = this._processedScenes.findIndex(s => this._currentTimeMs < s.endTimeMs);
+        if (newIdx !== this._currentSceneIndex) this._handleSceneTransition(newIdx);
+        this.dispatchEvent(new Event('timeupdate'));
+        this._animationFrameId = requestAnimationFrame((ts) => this._tick(ts));
+    }
+
+    _updateUI() {
+        this.ui.progress.value = (this._currentTimeMs / this._totalDurationMs) * 100 || 0;
+        this.ui.curTime.textContent = this._formatTime(this._currentTimeMs);
+    }
+
+    _formatTime(ms) {
+        const s = Math.floor(ms / 1000), m = Math.floor(s / 60), sec = s % 60;
+        return `${m}:${String(sec).padStart(2, '0')}`;
     }
 
     _calculateDurations() {
@@ -155,28 +224,8 @@ export class JsonVideo extends HTMLElement {
         });
     }
 
-    _tick(ts) {
-        if (!this._isPlaying) return;
-        const delta = ts - this._lastTimestamp;
-        this._lastTimestamp = ts;
-        this._currentTimeMs += delta;
-
-        if (this._currentTimeMs >= this._totalDurationMs) {
-            this.pause(); this.seekTo(this._totalDurationMs);
-            this.dispatchEvent(new Event('ended'));
-            return;
-        }
-
-        const newIdx = this._processedScenes.findIndex(s => this._currentTimeMs < s.endTimeMs);
-        if (newIdx !== this._currentSceneIndex) this._handleSceneTransition(newIdx);
-        
-        this.dispatchEvent(new Event('timeupdate'));
-        this._animationFrameId = requestAnimationFrame((ts) => this._tick(ts));
-    }
-
     _handleSceneTransition(newIdx) {
-        const prev = this._processedScenes[this._currentSceneIndex];
-        const next = this._processedScenes[newIdx];
+        const prev = this._processedScenes[this._currentSceneIndex], next = this._processedScenes[newIdx];
         if (this._mainAudio.src) {
             if (prev?.pauseBackground && this._mainAudioPausedByScene) {
                 this._mainAudio.currentTime = this._mainAudioResumeTime;
@@ -217,9 +266,7 @@ export class JsonVideo extends HTMLElement {
         this.ccOverlay.classList.toggle('hidden', !(this._showCaptions && scene.speech));
         const sceneTime = (this._currentTimeMs - scene.startTimeMs) / 1000;
         if (scene.audio) {
-            if (this._sceneAudio.getAttribute('src') !== scene.audio) {
-                this._sceneAudio.src = scene.audio; this._sceneAudio.load();
-            }
+            if (this._sceneAudio.getAttribute('src') !== scene.audio) { this._sceneAudio.src = scene.audio; this._sceneAudio.load(); }
             try { if (Math.abs(this._sceneAudio.currentTime - sceneTime) > 0.2) this._sceneAudio.currentTime = Math.max(0, sceneTime); } catch(e) {}
             if (this._isPlaying) this._sceneAudio.play().catch(() => {});
         } else { this._sceneAudio.pause(); }

@@ -43,19 +43,23 @@
                     
                     <div class="space-y-2 mt-2">
                         <select id="example-select" class="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
-                            <option value="">-- Select an example --</option>
+                            <option disabled selected value="">-- Select an example --</option>
                             <option value="examples/Variables_V1.json">Variables_V1.json</option>
                             <option value="examples/Functions_V1.json">Functions_V1.json</option>
                             <option value="examples/While_Loops_V1.json">While_Loops_V1.json</option>
                             <option value="examples/Conditionals_V1.json">Conditionals_V1.json</option>
                             <option value="examples/Painter_Object_V1.json">Painter_Object_V1.json</option>
+							<option value="examples/Functions_With_Parameters_V1.json">Functions_With_Parameters_V1.json</option>
+							<option value="examples/If_Else_V1.json">If_Else_V1.json</option>
+                            <option value="examples/DEMO_Functions_Addon_With_Sam_Demo.json">DEMO_Functions_Addon_With_Sam_Demo.json</option>
+                            <option value="examples/DEMO_Loops_Core_Sam_No_Human_Loop.json">DEMO_Loops_Core_Sam_No_Human_Loop.json</option>
                         </select>
                         <button id="load-example-btn" class="w-full bg-orange-600 text-white py-2 rounded-lg font-semibold hover:bg-orange-700 transition">Load From Dropdown</button>
                         <hr />
                         <button id="load-file-btn" class="w-full bg-purple-600 text-white py-2 rounded-lg font-semibold hover:bg-purple-700 transition">Load JSON from File</button>
                         <button id="save-file-btn" class="w-full bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition">Save JSON</button>
                         <hr />
-                        <button id="load-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Load Video</button>
+                        <button id="load-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">LOAD PLAYER</button>
                     </div>
                     <p id="message" class="mt-2 text-sm text-gray-600 min-h-[1.5rem]"></p>
                 </div>
@@ -78,32 +82,21 @@
             </div>
 
             <div class="lg:col-span-2">
-                <json-video id="player" class="mb-4"></json-video>
+                <json-video id="player" controls class="mb-4 rounded-lg shadow-lg"></json-video>
 
-                <div class="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <div class="flex items-center space-x-4">
-                        <span id="current-time-display" class="text-sm font-mono w-16 text-right">00:00.0</span>
-                        <input type="range" id="timeline" min="0" max="100" value="0" step="0.1" class="flex-grow">
-                        <span id="total-duration-display" class="text-sm font-mono w-16">--:--.-</span>
+                <div class="mt-4 p-4 bg-gray-100 rounded-lg border border-gray-300 flex justify-between items-center">
+                    <div id="export-status-container" class="flex items-center text-sm font-medium text-gray-700">
+                        <span id="export-status-text">Ready to export</span>
                     </div>
-                    <div class="flex justify-between items-center">
-                        <div class="space-x-2">
-                            <button id="play-pause-btn" disabled class="px-6 py-2 bg-green-600 text-white rounded-lg font-bold disabled:bg-gray-300">Play</button>
-                            <button id="reset-btn" disabled class="px-4 py-2 bg-gray-600 text-white rounded-lg font-semibold disabled:bg-gray-300">Reset</button>
-                        </div>
-                        <div class="flex items-center space-x-4">
-                            <label class="flex items-center"><input type="checkbox" id="cc-toggle" checked class="mr-2"> Captions</label>
-                            <button id="encode-button" disabled class="px-4 py-2 bg-purple-600 text-white rounded-lg font-bold disabled:bg-gray-300">Export MP4 (MT)</button>
-                        </div>
-                    </div>
+                    <button id="encode-button" disabled class="px-6 py-2 bg-purple-600 text-white rounded-lg font-bold disabled:bg-gray-300 hover:bg-purple-700 transition shadow-md">
+                        Export MP4 (MT)
+                    </button>
                 </div>
 
-                <div id="encoding-status-panel" class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg hidden">
-                    <span id="status-message" class="flex items-center text-sm text-yellow-800"></span>
-                </div>
                 <div id="video-output-container" class="mt-6 p-6 bg-gray-50 border border-gray-200 rounded-lg hidden text-center">
+                    <h3 class="text-lg font-bold mb-3 text-gray-800 font-mono">RENDERED OUTPUT</h3>
                     <video id="output-video" controls class="w-full max-w-lg mx-auto rounded-lg shadow-lg bg-black mb-4"></video>
-                    <button id="download-button" class="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold shadow-md">Download Video</button>
+                    <button id="download-button" class="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold shadow-md hover:bg-blue-700">Download Video</button>
                 </div>
             </div>
         </div>
@@ -113,15 +106,11 @@
         import { VideoExporter } from './video-exporter.js';
 
         const player = document.getElementById('player');
-        const exporter = new VideoExporter(player);
         const jsonArea = document.getElementById('video-json');
-        const playBtn = document.getElementById('play-pause-btn');
-        const resetBtn = document.getElementById('reset-btn');
         const encodeBtn = document.getElementById('encode-button');
-        const timeline = document.getElementById('timeline');
-        const curTimeDisplay = document.getElementById('current-time-display');
-        const totTimeDisplay = document.getElementById('total-duration-display');
-        const msg = document.getElementById('message');
+        const statusText = document.getElementById('export-status-text');
+        const exporter = new VideoExporter(player);
+
         const editorPanel = document.getElementById('editor-panel');
         const sceneSelect = document.getElementById('scene-select');
         const saveChangesBtn = document.getElementById('save-changes-btn');
@@ -134,96 +123,94 @@
             const rawJson = jsonArea.value.trim();
             try {
                 videoData = JSON.parse(rawJson);
-                // Set src and call load explicitly for compatibility
+                // player.src uses Data URI to bypass local file security
                 player.src = "data:application/json," + encodeURIComponent(rawJson);
                 player.load();
-                playBtn.disabled = resetBtn.disabled = encodeBtn.disabled = false;
+                encodeBtn.disabled = false;
                 initEditor();
             } catch(e) { alert("Invalid JSON: " + e.message); }
         };
 
-        // --- Example loading ---
+        // --- Example & File Loading ---
         document.getElementById('load-example-btn').onclick = async () => {
             const path = document.getElementById('example-select').value;
             if(!path) return;
             const res = await fetch(path);
-            const text = await res.text();
-            jsonArea.value = text;
-            videoData = JSON.parse(text);
-            player.src = "data:application/json," + encodeURIComponent(text);
-            player.load();
-            playBtn.disabled = resetBtn.disabled = encodeBtn.disabled = false;
-            initEditor();
+            jsonArea.value = await res.text();
+            document.getElementById('load-btn').click();
         };
 
-        // --- Component Events ---
-        player.addEventListener('loadedmetadata', () => {
-            timeline.max = player.duration;
-            totTimeDisplay.textContent = formatTime(player.duration);
-        });
-        player.addEventListener('timeupdate', () => {
-            timeline.value = player.currentTime;
-            curTimeDisplay.textContent = formatTime(player.currentTime);
-        });
-        player.addEventListener('play', () => { playBtn.textContent = "Pause"; });
-        player.addEventListener('pause', () => { playBtn.textContent = "Play"; });
+        document.getElementById('load-file-btn').onclick = () => document.getElementById('file-input').click();
+        document.getElementById('file-input').onchange = (e) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => { jsonArea.value = ev.target.result; document.getElementById('load-btn').click(); };
+            reader.readAsText(e.target.files[0]);
+        };
 
-        playBtn.onclick = () => player.paused ? player.play() : player.pause();
-        resetBtn.onclick = () => player.currentTime = 0;
-        timeline.oninput = (e) => player.currentTime = parseFloat(e.target.value);
-        document.getElementById('cc-toggle').onclick = (e) => player.setCaptions(e.target.checked);
-
-        function formatTime(ms) {
-            const s = Math.floor(ms / 1000), m = Math.floor(s / 60), sec = s % 60, t = Math.floor((ms % 1000) / 100);
-            return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}.${t}`;
-        }
+        document.getElementById('save-file-btn').onclick = () => {
+            const blob = new Blob([jsonArea.value], {type: 'application/json'});
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'video.json'; a.click();
+        };
 
         // --- Editor Logic ---
         function initEditor() {
             editorPanel.classList.remove('hidden');
-            sceneSelect.innerHTML = videoData.scenes.map((s, i) => `<option value="${i}">${i+1}. ${s.comment || 'Scene'}</option>`).join('');
+            // Populate scene dropdown with comments or generic indices
+            sceneSelect.innerHTML = videoData.scenes.map((s, i) => 
+                `<option value="${i}">${i+1}. ${s.comment || 'Scene'}</option>`
+            ).join('');
             loadScene(0);
         }
+
         sceneSelect.onchange = (e) => loadScene(parseInt(e.target.value));
+
         function loadScene(idx) {
             editingIdx = idx;
             const s = videoData.scenes[idx];
-            document.querySelectorAll('.editor-input').forEach(el => el.value = s[el.dataset.key] || '');
+            // Populate inputs from the specific scene object
+            document.querySelectorAll('.editor-input').forEach(el => {
+                el.value = s[el.dataset.key] || '';
+            });
+            saveChangesBtn.disabled = true; // Reset button state on new scene load
         }
+
+        // Enable 'Save Changes' button only when input occurs
         document.querySelectorAll('.editor-input').forEach(el => {
             el.oninput = () => { saveChangesBtn.disabled = false; };
         });
+
         saveChangesBtn.onclick = () => {
             const s = videoData.scenes[editingIdx];
-            document.querySelectorAll('.editor-input').forEach(el => s[el.dataset.key] = el.value);
+            // Write values back to the local videoData object
+            document.querySelectorAll('.editor-input').forEach(el => {
+                s[el.dataset.key] = el.value;
+            });
+            // Update the main JSON textarea
             jsonArea.value = JSON.stringify(videoData, null, 4);
             saveChangesBtn.disabled = true;
+            // Reload the player to reflect changes immediately
             document.getElementById('load-btn').click();
         };
 
-        // --- Multi-threaded Export ---
+        // --- Export Logic ---
         encodeBtn.onclick = async () => {
-            const statusPanel = document.getElementById('encoding-status-panel');
-            const statusMsg = document.getElementById('status-message');
-            statusPanel.classList.remove('hidden');
             encodeBtn.disabled = true;
-
             try {
-                await exporter.init((m) => statusMsg.innerHTML = `<div class="loader"></div> ${m}`);
-                const url = await exporter.captureAndEncode((m) => statusMsg.innerHTML = `<div class="loader"></div> ${m}`);
-                
+                await exporter.init((m) => statusText.innerHTML = `<div class="loader"></div> ${m}`);
+                const url = await exporter.captureAndEncode((m) => statusText.innerHTML = `<div class="loader"></div> ${m}`);
                 document.getElementById('output-video').src = url;
                 document.getElementById('video-output-container').classList.remove('hidden');
-                statusMsg.textContent = "✅ Export Complete!";
+                statusText.textContent = "✅ Export Complete!";
             } catch (err) {
-                statusMsg.textContent = "Error: " + err.message;
-            } finally {
-                encodeBtn.disabled = false;
-            }
+                statusText.textContent = "Error: " + err.message;
+            } finally { encodeBtn.disabled = false; }
         };
 
         document.getElementById('download-button').onclick = () => {
-            const a = document.createElement('a'); a.href = document.getElementById('output-video').src; a.download = 'video.mp4'; a.click();
+            const a = document.createElement('a'); 
+            a.href = document.getElementById('output-video').src; 
+            a.download = 'video.mp4'; 
+            a.click();
         };
     </script>
 </body>

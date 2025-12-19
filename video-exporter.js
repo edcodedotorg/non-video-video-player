@@ -7,13 +7,9 @@ export class VideoExporter {
 
     async init(statusCallback) {
         if (this.ffmpeg) return;
-
-        statusCallback("Initializing Multi-threaded FFmpeg...");
+        statusCallback("Initializing FFmpeg (Multi-threaded)...");
         
         const { createFFmpeg } = FFmpeg;
-        
-        // Use the standard multi-threaded corePath. 
-        // This will now work because your COOP/COEP headers are active.
         this.ffmpeg = createFFmpeg({
             log: true,
             corePath: new URL('./ffmpeg-core.js', import.meta.url).href
@@ -23,26 +19,30 @@ export class VideoExporter {
             await this.ffmpeg.load();
         } catch (error) {
             console.error("FFmpeg Init Error:", error);
-            throw new Error("FFmpeg failed to load. Ensure ffmpeg-core.js/wasm are local and COOP/COEP headers are active.");
+            throw new Error("FFmpeg failed to load. Check COOP/COEP headers.");
         }
     }
 
     async captureAndEncode(statusCallback) {
+        // duration is now in seconds
         const totalDuration = this.player.duration;
-        const frameInterval = 1000 / this.fps;
-        const totalFrames = Math.floor(totalDuration / frameInterval);
+        const totalFrames = Math.floor(totalDuration * this.fps);
 
         for (let i = 0; i < totalFrames; i++) {
             statusCallback(`Capturing Frame ${i + 1} / ${totalFrames}`);
-            this.player.currentTime = i * frameInterval;
             
+            // Setting currentTime in seconds to match the new component API
+            this.player.currentTime = i / this.fps;
+            
+            // Rendering delay
             await new Promise(r => setTimeout(r, 150)); 
 
             const captureTarget = this.player.shadowRoot.querySelector('#video-container');
             const canvas = await html2canvas(captureTarget, { 
                 useCORS: true, 
                 allowTaint: true,
-                logging: false
+                logging: false,
+                scale: 1 
             });
             
             const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
@@ -50,8 +50,7 @@ export class VideoExporter {
             this.ffmpeg.FS('writeFile', `frame_${String(i + 1).padStart(4, '0')}.jpg`, new Uint8Array(buffer));
         }
 
-        statusCallback("Encoding MP4 (Multi-threaded)...");
-        // We can now use a higher preset like 'medium' because of multi-threading gains.
+        statusCallback("Encoding MP4...");
         await this.ffmpeg.run(
             '-framerate', String(this.fps),
             '-i', 'frame_%04d.jpg',
@@ -64,7 +63,7 @@ export class VideoExporter {
         const data = this.ffmpeg.FS('readFile', 'output.mp4');
         const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
 
-        // Cleanup
+        // FS Cleanup
         for (let i = 0; i < totalFrames; i++) {
             try { this.ffmpeg.FS('unlink', `frame_${String(i + 1).padStart(4, '0')}.jpg`); } catch(e) {}
         }
