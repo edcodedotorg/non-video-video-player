@@ -41,6 +41,7 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <div class="lg:col-span-1 flex flex-col gap-6">
+                
                 <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <h2 class="text-xl font-semibold mb-3 text-gray-700">Project Source</h2>
                     <div class="space-y-4">
@@ -70,13 +71,20 @@
                 </div>
 
                 <div id="editor-panel" class="bg-blue-50/30 p-4 rounded-lg border border-blue-200">
-                    <h2 class="text-lg font-bold text-gray-800 mb-4">Scene Editor</h2>
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold text-gray-800">Scene Editor</h2>
+                    </div>
+
                     <div class="space-y-4">
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Select Scene</label>
                             <select id="scene-select" class="w-full p-2 border border-blue-300 bg-white rounded text-sm font-semibold"></select>
                         </div>
-                        
+                        <div id="scene-toolbar" class="flex gap-1">
+                            <button id="ins-before-btn" class="text-[10px] uppercase font-bold bg-white border border-blue-300 px-2 py-1 rounded hover:bg-blue-50">Insert Before</button>
+                            <button id="ins-after-btn" class="text-[10px] uppercase font-bold bg-white border border-blue-300 px-2 py-1 rounded hover:bg-blue-50">Insert After</button>
+                            <button id="del-scene-btn" class="text-[10px] uppercase font-bold bg-red-50 border border-red-200 text-red-700 px-2 py-1 rounded hover:bg-red-100">Delete</button>
+                        </div>
                         <div class="grid grid-cols-2 gap-2">
                             <div>
                                 <label class="block text-xs text-gray-500 mb-1">Duration (sec)</label>
@@ -86,6 +94,11 @@
                                 <label class="block text-xs text-gray-500 mb-1">Comment</label>
                                 <input type="text" data-key="comment" class="editor-input w-full p-2 border rounded text-sm">
                             </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 py-1">
+                            <input type="checkbox" id="pause-bg-check" data-key="pauseBackground" class="editor-input w-4 h-4 accent-blue-600">
+                            <label for="pause-bg-check" class="text-sm text-gray-700 font-medium">Pause Background Audio</label>
                         </div>
 
                         <div>
@@ -117,14 +130,14 @@
                     <div id="export-status-container" class="flex items-center text-sm font-medium text-gray-700">
                         <span id="export-status-text">Ready to export</span>
                     </div>
-                    <button id="encode-button" disabled class="px-6 py-2 bg-purple-600 text-white rounded-lg font-bold disabled:bg-gray-300 hover:bg-purple-700 transition">
+                    <button id="encode-button" disabled class="px-6 py-2 bg-purple-600 text-white rounded-lg font-bold disabled:bg-gray-300 hover:bg-purple-700 transition shadow-md">
                         Export MP4
                     </button>
                 </div>
 
                 <div id="video-output-container" class="mt-6 p-6 bg-gray-50 border border-gray-200 rounded-lg hidden text-center">
                     <video id="output-video" controls class="w-full max-w-lg mx-auto rounded-lg shadow-lg bg-black mb-4"></video>
-                    <button id="download-button" class="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold">Download Video</button>
+                    <button id="download-button" class="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold shadow-md">Download Video</button>
                 </div>
             </div>
         </div>
@@ -172,9 +185,7 @@
             renderInPlayer(true); 
         }
 
-        function triggerFileOpen() {
-            fileInput.click();
-        }
+        function triggerFileOpen() { fileInput.click(); }
 
         function handleFileSelection(e) {
             const reader = new FileReader();
@@ -192,40 +203,65 @@
             const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'video.json'; a.click();
         }
 
+        function insertScene(position) {
+            if (!isJsonValid) return;
+            const newScene = { duration: "2.0", comment: "New Scene", speech: "", html: "<div>Content</div>", pauseBackground: false };
+            if (videoData.scenes.length === 0) {
+                videoData.scenes.push(newScene);
+                editingIdx = 0;
+            } else {
+                const offset = position === 'after' ? 1 : 0;
+                videoData.scenes.splice(editingIdx + offset, 0, newScene);
+                editingIdx += offset;
+            }
+            refreshEditorAndJSON();
+        }
+
+        function deleteScene() {
+            if (!isJsonValid || videoData.scenes.length === 0) return;
+            videoData.scenes.splice(editingIdx, 1);
+            editingIdx = videoData.scenes.length > 0 ? Math.max(0, editingIdx - 1) : -1;
+            refreshEditorAndJSON();
+        }
+
+        function refreshEditorAndJSON() {
+            const hasScenes = videoData.scenes.length > 0;
+            document.getElementById('scene-toolbar').classList.toggle('hidden', !hasScenes);
+            jsonArea.value = JSON.stringify(videoData, null, 4);
+            syncSceneDropdown();
+            renderInPlayer(false);
+        }
+
         function syncSceneDropdown(forceFirst = false) {
             sceneSelect.innerHTML = videoData.scenes.map((s, i) => 
                 `<option value="${i}">${i+1}. ${s.comment || 'Scene'}</option>`
             ).join('');
-            
-            if (forceFirst) {
-                sceneSelect.value = 0;
-            } else if (videoData.scenes[editingIdx]) {
-                sceneSelect.value = editingIdx;
-            } else {
-                sceneSelect.value = 0;
-            }
+            if (forceFirst) sceneSelect.value = 0;
+            else if (videoData.scenes[editingIdx]) sceneSelect.value = editingIdx;
+            else sceneSelect.value = 0;
             loadSelectedScene();
         }
 
         function loadSelectedScene() {
             editingIdx = parseInt(sceneSelect.value) || 0;
             const s = videoData.scenes[editingIdx];
-            if (!s) {
-                clearEditorInputs();
-                return;
-            }
-            editorInputs.forEach(el => { el.value = s[el.dataset.key] || ''; });
+            if (!s) { clearEditorInputs(); return; }
+            editorInputs.forEach(el => { 
+                if (el.type === 'checkbox') el.checked = !!s[el.dataset.key];
+                else el.value = s[el.dataset.key] || ''; 
+            });
         }
 
         function clearEditorInputs() {
             sceneSelect.innerHTML = '<option disabled>Invalid JSON</option>';
-            editorInputs.forEach(el => el.value = '');
+            editorInputs.forEach(el => { if (el.type === 'checkbox') el.checked = false; else el.value = ''; });
         }
 
         function updateJsonFromEditor() {
             if (!isJsonValid || !videoData.scenes[editingIdx]) return;
             editorInputs.forEach(el => {
-                videoData.scenes[editingIdx][el.dataset.key] = el.value;
+                const val = el.type === 'checkbox' ? el.checked : el.value;
+                videoData.scenes[editingIdx][el.dataset.key] = val;
             });
             jsonArea.value = JSON.stringify(videoData, null, 4);
             jsonArea.classList.remove('json-error');
@@ -254,9 +290,8 @@
                 document.getElementById('output-video').src = url;
                 document.getElementById('video-output-container').classList.remove('hidden');
                 statusText.textContent = "✅ Export Complete!";
-            } catch (err) {
-                statusText.textContent = "Error: " + err.message;
-            } finally { encodeBtn.disabled = false; }
+            } catch (err) { statusText.textContent = "Error: " + err.message; }
+            finally { encodeBtn.disabled = false; }
         }
 
         // --- Event Bindings ---
@@ -265,19 +300,16 @@
         document.getElementById('load-file-btn').addEventListener('click', triggerFileOpen);
         document.getElementById('save-file-btn').addEventListener('click', downloadProjectJson);
         document.getElementById('encode-button').addEventListener('click', startExport);
+        document.getElementById('ins-before-btn').addEventListener('click', () => insertScene('before'));
+        document.getElementById('ins-after-btn').addEventListener('click', () => insertScene('after'));
+        document.getElementById('del-scene-btn').addEventListener('click', deleteScene);
         
         fileInput.addEventListener('change', handleFileSelection);
         sceneSelect.addEventListener('change', loadSelectedScene);
-        
-        editorInputs.forEach(el => el.addEventListener('input', updateJsonFromEditor));
+        editorInputs.forEach(el => el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', updateJsonFromEditor));
         jsonArea.addEventListener('input', () => validateAndSyncJson(false));
 
-        window.addEventListener('load', () => {
-            if (jsonArea.value) {
-                validateAndSyncJson(true);
-                renderInPlayer(true);
-            }
-        });
+        window.addEventListener('load', () => { if (jsonArea.value) { validateAndSyncJson(true); renderInPlayer(true); } });
     </script>
 </body>
 </html>

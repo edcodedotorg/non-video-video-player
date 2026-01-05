@@ -37,7 +37,6 @@ iframe { width: 100%; height: 100%; border: none; background-color: white; point
     gap: 0; z-index: 20;
     transition: opacity 0.2s ease-in-out;
 }
-
 :host([controls]) #controls-bar { opacity: 1; }
 :host([controls].playing:not(:hover)) #controls-bar { opacity: 0; }
 :host(:not([controls])) #controls-bar { display: none; }
@@ -67,7 +66,7 @@ iframe { width: 100%; height: 100%; border: none; background-color: white; point
 #mute-btn { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='white' stroke-width='2' d='M11 5L6 9H2v6h4l5 4V5z'/%3E%3Cpath fill='none' stroke='white' stroke-width='2' d='M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14'/%3E%3C/svg%3E"); }
 #mute-btn.muted { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='white' stroke-width='2' d='M11 5L6 9H2v6h4l5 4V5z'/%3E%3Cline x1='23' y1='9' x2='17' y2='15' stroke='white' stroke-width='2'/%3E%3Cline x1='17' y1='9' x2='23' y2='15' stroke='white' stroke-width='2'/%3E%3C/svg%3E"); }
 
-/* CC Icons with Gapped Border */
+/* CC Icons with Physical Gapped Border */
 #cc-btn { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='5' width='18' height='14' rx='2' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath fill='white' d='M7 15h3c.55 0 1-.45 1-1v-1H9.5v.5h-2v-3h2v.5H11v-1c0-.55-.45-1-1-1H7c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1zm7 0h3c.55 0 1-.45 1-1v-1h-1.5v.5h-2v-3h2v.5H18v-1c0-.55-.45-1-1-1h-3c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1z'/%3E%3C/svg%3E"); }
 #cc-btn.disabled { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='white' stroke-width='2' d='M16 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h8'/%3E%3Cpath fill='white' d='M7 15h3c.55 0 1-.45 1-1v-1H9.5v.5h-2v-3h2v.5H11v-1c0-.55-.45-1-1-1H7c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1zm7 0h3c.55 0 1-.45 1-1v-1h-1.5v.5h-2v-3h2v.5H18v-1c0-.55-.45-1-1-1h-3c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1z'/%3E%3Cline x1='19' y1='3' x2='5' y2='21' stroke='white' stroke-width='2'/%3E%3C/svg%3E"); }
 

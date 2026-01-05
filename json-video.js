@@ -101,7 +101,6 @@ export class JsonVideo extends HTMLElement {
         this.addEventListener('timeupdate', () => this._updateUI());
     }
 
-    // Standard API properties
     get volume() { return this._volume; }
     set volume(val) {
         this._volume = Math.max(0, Math.min(1, val));
