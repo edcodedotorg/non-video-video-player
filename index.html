@@ -1,33 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JSON Video Editor</title>
-    
+
     <script src="tailwind.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" crossorigin="anonymous"></script>
-    <script src="ffmpeg.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"
+        crossorigin="anonymous"></script>
+    <!-- <script src="ffmpeg.min.js"></script> -->
 
     <script type="module" src="json-video.js"></script>
-    
+
     <script type="module">
+
+
+
+
         import json from './examples/example.json' with { type: 'json' }
+
+        const ffmpegConsole = document.getElementById('ffmpeg-console');
+
+        window.addEventListener('ffmpeg-log', (e) => {
+            const line = document.createElement('div');
+            line.textContent = `> ${e.detail}`;
+            ffmpegConsole.appendChild(line);
+            ffmpegConsole.scrollTop = ffmpegConsole.scrollHeight;
+        });
         const jsonTextArea = document.querySelector('#video-json');
-        if(!jsonTextArea.value.trim()) {
+        if (!jsonTextArea.value.trim()) {
             jsonTextArea.textContent = JSON.stringify(json, null, "    ");
         }
     </script>
     <style>
-        :root { --primary-color: #3b82f6; }
-        body { font-family: 'Inter', sans-serif; background-color: #f3fff6; }
-        .loader {
-            border: 3px solid #f3f3f3; border-top: 3px solid var(--primary-color);
-            border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite;
-            display: inline-block; vertical-align: middle; margin-right: 8px;
+        :root {
+            --primary-color: #3b82f6;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .hidden { display: none; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3fff6;
+        }
+
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .hidden {
+            display: none;
+        }
+
         .json-error {
             border-color: #ef4444 !important;
             background-color: #fef2f2 !important;
@@ -35,36 +76,48 @@
         }
     </style>
 </head>
+
 <body class="p-4 md:p-8">
     <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-2xl">
         <h1 class="text-3xl font-bold mb-6 text-gray-800">JSON Video Editor</h1>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <div class="lg:col-span-1 flex flex-col gap-6">
-                
+
                 <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <h2 class="text-xl font-semibold mb-3 text-gray-700">Project Source</h2>
                     <div class="space-y-4">
                         <div class="p-3 border border-gray-300 rounded-lg bg-white/50 space-y-2">
-                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-tight">Select Preset</label>
-                            <select id="example-select" class="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-tight">Select
+                                Preset</label>
+                            <select id="example-select"
+                                class="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none">
                                 <option disabled selected value="">-- Choose an example --</option>
                                 <option value="examples/Variables_V1.json">Variables_V1.json</option>
                                 <option value="examples/Functions_V1.json">Functions_V1.json</option>
                                 <option value="examples/While_Loops_V1.json">While_Loops_V1.json</option>
                                 <option value="examples/Conditionals_V1.json">Conditionals_V1.json</option>
                                 <option value="examples/Painter_Object_V1.json">Painter_Object_V1.json</option>
-                                <option value="examples/Functions_With_Parameters_V1.json">Functions_With_Parameters_V1.json</option>
+                                <option value="examples/Functions_With_Parameters_V1.json">
+                                    Functions_With_Parameters_V1.json</option>
                                 <option value="examples/If_Else_V1.json">If_Else_V1.json</option>
-                                <option value="examples/DEMO_Functions_Addon_With_Sam_Demo.json">DEMO_Functions_Addon_With_Sam_Demo.json</option>
-                                <option value="examples/DEMO_Loops_Core_Sam_No_Human_Loop.json">DEMO_Loops_Core_Sam_No_Human_Loop.json</option>
+                                <option value="examples/DEMO_Functions_Addon_With_Sam_Demo.json">
+                                    DEMO_Functions_Addon_With_Sam_Demo.json</option>
+                                <option value="examples/DEMO_Loops_Core_Sam_No_Human_Loop.json">
+                                    DEMO_Loops_Core_Sam_No_Human_Loop.json</option>
                             </select>
-                            <button id="load-example-btn" class="w-full bg-orange-600 text-white py-2 rounded-lg font-bold hover:bg-orange-700 transition shadow-sm">Load Preset</button>
+                            <button id="load-example-btn"
+                                class="w-full bg-orange-600 text-white py-2 rounded-lg font-bold hover:bg-orange-700 transition shadow-sm">Load
+                                Preset</button>
                         </div>
 
                         <div class="flex gap-2">
-                            <button id="load-file-btn" class="flex-1 bg-purple-600 text-white py-2 rounded-lg font-semibold hover:bg-purple-700 transition text-sm">Open JSON</button>
-                            <button id="save-file-btn" class="flex-1 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition text-sm">Download JSON</button>
+                            <button id="load-file-btn"
+                                class="flex-1 bg-purple-600 text-white py-2 rounded-lg font-semibold hover:bg-purple-700 transition text-sm">Open
+                                JSON</button>
+                            <button id="save-file-btn"
+                                class="flex-1 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition text-sm">Download
+                                JSON</button>
                         </div>
                     </div>
                     <input type="file" id="file-input" accept=".json,application/json" class="hidden">
@@ -78,47 +131,62 @@
                     <div class="space-y-4">
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Select Scene</label>
-                            <select id="scene-select" class="w-full p-2 border border-blue-300 bg-white rounded text-sm font-semibold"></select>
+                            <select id="scene-select"
+                                class="w-full p-2 border border-blue-300 bg-white rounded text-sm font-semibold"></select>
                         </div>
                         <div id="scene-toolbar" class="flex gap-1">
-                            <button id="ins-before-btn" class="text-[10px] uppercase font-bold bg-white border border-blue-300 px-2 py-1 rounded hover:bg-blue-50">Insert Before</button>
-                            <button id="ins-after-btn" class="text-[10px] uppercase font-bold bg-white border border-blue-300 px-2 py-1 rounded hover:bg-blue-50">Insert After</button>
-                            <button id="del-scene-btn" class="text-[10px] uppercase font-bold bg-red-50 border border-red-200 text-red-700 px-2 py-1 rounded hover:bg-red-100">Delete</button>
+                            <button id="ins-before-btn"
+                                class="text-[10px] uppercase font-bold bg-white border border-blue-300 px-2 py-1 rounded hover:bg-blue-50">Insert
+                                Before</button>
+                            <button id="ins-after-btn"
+                                class="text-[10px] uppercase font-bold bg-white border border-blue-300 px-2 py-1 rounded hover:bg-blue-50">Insert
+                                After</button>
+                            <button id="del-scene-btn"
+                                class="text-[10px] uppercase font-bold bg-red-50 border border-red-200 text-red-700 px-2 py-1 rounded hover:bg-red-100">Delete</button>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <div>
                                 <label class="block text-xs text-gray-500 mb-1">Duration (sec)</label>
-                                <input type="text" data-key="duration" class="editor-input w-full p-2 border rounded text-sm">
+                                <input type="text" data-key="duration"
+                                    class="editor-input w-full p-2 border rounded text-sm">
                             </div>
                             <div>
                                 <label class="block text-xs text-gray-500 mb-1">Comment</label>
-                                <input type="text" data-key="comment" class="editor-input w-full p-2 border rounded text-sm">
+                                <input type="text" data-key="comment"
+                                    class="editor-input w-full p-2 border rounded text-sm">
                             </div>
                         </div>
 
                         <div class="flex items-center gap-2 py-1">
-                            <input type="checkbox" id="pause-bg-check" data-key="pauseBackground" class="editor-input w-4 h-4 accent-blue-600">
-                            <label for="pause-bg-check" class="text-sm text-gray-700 font-medium">Pause Background Audio</label>
+                            <input type="checkbox" id="pause-bg-check" data-key="pauseBackground"
+                                class="editor-input w-4 h-4 accent-blue-600">
+                            <label for="pause-bg-check" class="text-sm text-gray-700 font-medium">Pause Background
+                                Audio</label>
                         </div>
 
                         <div>
                             <label class="block text-xs text-gray-500 mb-1">Speech / Captions</label>
-                            <textarea data-key="speech" rows="2" class="editor-input w-full p-2 border rounded text-sm"></textarea>
+                            <textarea data-key="speech" rows="2"
+                                class="editor-input w-full p-2 border rounded text-sm"></textarea>
                         </div>
 
                         <div>
                             <label class="block text-xs text-gray-500 mb-1">HTML Content</label>
-                            <textarea data-key="html" rows="12" class="editor-input w-full p-2 border rounded text-sm font-mono"></textarea>
+                            <textarea data-key="html" rows="12"
+                                class="editor-input w-full p-2 border rounded text-sm font-mono"></textarea>
                         </div>
 
                         <hr class="border-blue-200">
 
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Raw JSON</label>
-                            <textarea id="video-json" rows="10" class="w-full p-3 border border-gray-300 rounded-lg text-[10px] font-mono shadow-inner bg-gray-50 outline-none"></textarea>
+                            <textarea id="video-json" rows="10"
+                                class="w-full p-3 border border-gray-300 rounded-lg text-[10px] font-mono shadow-inner bg-gray-50 outline-none"></textarea>
                         </div>
 
-                        <button id="load-btn" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">Render in Player</button>
+                        <button id="load-btn"
+                            class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">Render
+                            in Player</button>
                     </div>
                 </div>
             </div>
@@ -126,18 +194,43 @@
             <div class="lg:col-span-2 sticky top-8 self-start">
                 <json-video id="player" controls class="mb-4 rounded-lg shadow-lg"></json-video>
 
-                <div class="mt-4 p-4 bg-gray-100 rounded-lg border border-gray-300 flex justify-between items-center">
-                    <div id="export-status-container" class="flex items-center text-sm font-medium text-gray-700">
-                        <span id="export-status-text">Ready to export</span>
+                <div class="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div class="flex justify-between items-center">
+                        <span id="export-status-text"
+                            class="text-sm font-bold text-gray-600 uppercase tracking-tight">Ready</span>
+                        <button id="encode-button" disabled
+                            class="px-8 py-2 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 shadow-md">
+                            Export MP4
+                        </button>
                     </div>
-                    <button id="encode-button" disabled class="px-6 py-2 bg-purple-600 text-white rounded-lg font-bold disabled:bg-gray-300 hover:bg-purple-700 transition shadow-md">
-                        Export MP4
-                    </button>
+
+                    <details class="mt-4 border-t border-gray-200 pt-2">
+                        <summary
+                            class="text-[10px] font-bold text-gray-400 cursor-pointer uppercase py-2 hover:text-gray-600 transition">
+                            Developer Logs (FFmpeg Output)
+                        </summary>
+                        <div id="ffmpeg-console"
+                            class="mt-2 w-full h-40 bg-zinc-900 text-emerald-400 font-mono text-[10px] p-3 overflow-y-auto rounded shadow-inner">
+                            > Initializing debugger...
+                        </div>
+                    </details>
                 </div>
 
-                <div id="video-output-container" class="mt-6 p-6 bg-gray-50 border border-gray-200 rounded-lg hidden text-center">
-                    <video id="output-video" controls class="w-full max-w-lg mx-auto rounded-lg shadow-lg bg-black mb-4"></video>
-                    <button id="download-button" class="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold shadow-md">Download Video</button>
+                <div id="video-output-container"
+                    class="mt-6 p-6 bg-gray-50 border border-gray-200 rounded-lg hidden text-center">
+
+                    <video id="output-video" controls
+                        class="w-full max-w-lg mx-auto rounded-lg shadow-lg bg-black mb-4"></video>
+                    <div class="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                        <div class="flex justify-between items-center">
+                            <div class="flex gap-2">
+                                <button id="download-btn"
+                                    class="hidden px-4 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-md">
+                                    Download MP4
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -171,35 +264,35 @@
                 player.load();
                 encodeBtn.disabled = false;
                 syncSceneDropdown(forceReset);
-            } catch(e) {
+            } catch (e) {
                 jsonArea.classList.add('json-error');
             }
         }
 
         async function loadPreset() {
             const path = document.getElementById('example-select').value;
-            if(!path) return;
+            if (!path) return;
             const res = await fetch(path);
             jsonArea.value = await res.text();
             validateAndSyncJson(true);
-            renderInPlayer(true); 
+            renderInPlayer(true);
         }
 
         function triggerFileOpen() { fileInput.click(); }
 
         function handleFileSelection(e) {
             const reader = new FileReader();
-            reader.onload = (ev) => { 
-                jsonArea.value = ev.target.result; 
+            reader.onload = (ev) => {
+                jsonArea.value = ev.target.result;
                 validateAndSyncJson(true);
-                renderInPlayer(true); 
+                renderInPlayer(true);
             };
             reader.readAsText(e.target.files[0]);
         }
 
         function downloadProjectJson() {
             if (!isJsonValid) return;
-            const blob = new Blob([jsonArea.value], {type: 'application/json'});
+            const blob = new Blob([jsonArea.value], { type: 'application/json' });
             const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'video.json'; a.click();
         }
 
@@ -233,8 +326,8 @@
         }
 
         function syncSceneDropdown(forceFirst = false) {
-            sceneSelect.innerHTML = videoData.scenes.map((s, i) => 
-                `<option value="${i}">${i+1}. ${s.comment || 'Scene'}</option>`
+            sceneSelect.innerHTML = videoData.scenes.map((s, i) =>
+                `<option value="${i}">${i + 1}. ${s.comment || 'Scene'}</option>`
             ).join('');
             if (forceFirst) sceneSelect.value = 0;
             else if (videoData.scenes[editingIdx]) sceneSelect.value = editingIdx;
@@ -246,9 +339,9 @@
             editingIdx = parseInt(sceneSelect.value) || 0;
             const s = videoData.scenes[editingIdx];
             if (!s) { clearEditorInputs(); return; }
-            editorInputs.forEach(el => { 
+            editorInputs.forEach(el => {
                 if (el.type === 'checkbox') el.checked = !!s[el.dataset.key];
-                else el.value = s[el.dataset.key] || ''; 
+                else el.value = s[el.dataset.key] || '';
             });
         }
 
@@ -274,26 +367,60 @@
                 isJsonValid = true;
                 jsonArea.classList.remove('json-error');
                 syncSceneDropdown(forceReset || wasInvalid);
-            } catch(e) {
+            } catch (e) {
                 isJsonValid = false;
                 jsonArea.classList.add('json-error');
                 clearEditorInputs();
             }
         }
 
+        // index.html - startExport logic
         async function startExport() {
             if (!isJsonValid) return;
             encodeBtn.disabled = true;
-            try {
-                await exporter.init((m) => statusText.innerHTML = `<div class="loader"></div> ${m}`);
-                const url = await exporter.captureAndEncode((m) => statusText.innerHTML = `<div class="loader"></div> ${m}`);
-                document.getElementById('output-video').src = url;
-                document.getElementById('video-output-container').classList.remove('hidden');
-                statusText.textContent = "✅ Export Complete!";
-            } catch (err) { statusText.textContent = "Error: " + err.message; }
-            finally { encodeBtn.disabled = false; }
-        }
+            const downloadBtn = document.getElementById('download-btn');
+            const statusText = document.getElementById('export-status-text');
 
+            // Reset UI and logs
+            downloadBtn.classList.add('hidden');
+            document.getElementById('video-output-container').classList.add('hidden');
+            document.getElementById('ffmpeg-console').innerHTML = '> Starting export...';
+            statusText.innerHTML = `<div class="loader"></div> Initializing...`;
+
+            try {
+                // Step 1: Init FFmpeg
+                await exporter.init((m) => {
+                    statusText.innerHTML = `<div class="loader"></div> ${m}`;
+                });
+
+                // Step 2: Start Capture and Encoding
+                const url = await exporter.captureAndEncode((m) => {
+                    statusText.innerHTML = `<div class="loader"></div> ${m}`;
+                });
+
+                if (url) {
+                    statusText.textContent = "✅ Export Finished!";
+                    downloadBtn.classList.remove('hidden');
+                    downloadBtn.onclick = () => {
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `video-export-${Date.now()}.mp4`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    };
+
+                    const videoElem = document.getElementById('output-video');
+                    videoElem.src = url;
+                    document.getElementById('video-output-container').classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error("Export Error:", err);
+                statusText.innerHTML = `<span class="text-red-500 font-bold">Error: ${err.message}</span>`;
+            } finally {
+                encodeBtn.disabled = false;
+            }
+        }
         // --- Event Bindings ---
         document.getElementById('load-btn').addEventListener('click', () => renderInPlayer(false));
         document.getElementById('load-example-btn').addEventListener('click', loadPreset);
@@ -303,7 +430,7 @@
         document.getElementById('ins-before-btn').addEventListener('click', () => insertScene('before'));
         document.getElementById('ins-after-btn').addEventListener('click', () => insertScene('after'));
         document.getElementById('del-scene-btn').addEventListener('click', deleteScene);
-        
+
         fileInput.addEventListener('change', handleFileSelection);
         sceneSelect.addEventListener('change', loadSelectedScene);
         editorInputs.forEach(el => el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', updateJsonFromEditor));
@@ -312,4 +439,5 @@
         window.addEventListener('load', () => { if (jsonArea.value) { validateAndSyncJson(true); renderInPlayer(true); } });
     </script>
 </body>
+
 </html>

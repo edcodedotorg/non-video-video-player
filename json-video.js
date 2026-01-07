@@ -6,7 +6,7 @@ export class JsonVideo extends HTMLElement {
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
-        
+
         this._videoData = null;
         this._processedScenes = [];
         this._totalDurationMs = 0;
@@ -20,8 +20,16 @@ export class JsonVideo extends HTMLElement {
 
         this._mainAudio = new Audio();
         this._sceneAudio = new Audio();
+
+        this._mainAudio.crossOrigin = "anonymous";
+        this._sceneAudio.crossOrigin = "anonymous";
+
+        this.shadowRoot.appendChild(this._mainAudio);
+        this.shadowRoot.appendChild(this._sceneAudio);
+
         this._mainAudioPausedByScene = false;
         this._mainAudioResumeTime = 0;
+        
 
         this._setupDOM();
     }
@@ -53,14 +61,14 @@ export class JsonVideo extends HTMLElement {
                 </div>
             </div>
         `;
-        
+
         this.shadowRoot.appendChild(styleElement);
         this.shadowRoot.appendChild(container);
 
         this.renderer = this.shadowRoot.querySelector('#scene-renderer');
         this.ccOverlay = this.shadowRoot.querySelector('#closed-caption-overlay');
         this.ccText = this.shadowRoot.querySelector('.cc-text');
-        
+
         this.ui = {
             playBtn: this.shadowRoot.querySelector('#play-btn'),
             muteBtn: this.shadowRoot.querySelector('#mute-btn'),
@@ -78,9 +86,9 @@ export class JsonVideo extends HTMLElement {
         this.ui.playBtn.onclick = () => this.paused ? this.play() : this.pause();
         this.ui.progress.oninput = (e) => this.seekTo((parseFloat(e.target.value) / 100) * this._totalDurationMs);
         this.ui.volume.oninput = (e) => this.volume = parseFloat(e.target.value);
-        
+
         this.ui.muteBtn.onclick = () => {
-            if (this.volume > 0) { this._lastVolume = this.volume; this.volume = 0; } 
+            if (this.volume > 0) { this._lastVolume = this.volume; this.volume = 0; }
             else { this.volume = this._lastVolume || 1.0; }
         };
 
@@ -176,8 +184,8 @@ export class JsonVideo extends HTMLElement {
                 this._mainAudioResumeTime = seekSec;
                 this._mainAudioPausedByScene = true;
             } else {
-                try { this._mainAudio.currentTime = seekSec; } catch(e) {}
-                if (this._isPlaying) this._mainAudio.play().catch(() => {});
+                try { this._mainAudio.currentTime = seekSec; } catch (e) { }
+                if (this._isPlaying) this._mainAudio.play().catch(() => { });
                 this._mainAudioPausedByScene = false;
             }
         }
@@ -228,7 +236,7 @@ export class JsonVideo extends HTMLElement {
         if (this._mainAudio.src) {
             if (prev?.pauseBackground && this._mainAudioPausedByScene) {
                 this._mainAudio.currentTime = this._mainAudioResumeTime;
-                this._mainAudio.play().catch(() => {});
+                this._mainAudio.play().catch(() => { });
                 this._mainAudioPausedByScene = false;
             }
             if (next?.pauseBackground) {
@@ -249,7 +257,7 @@ export class JsonVideo extends HTMLElement {
                 this._mainAudioPausedByScene = true;
             } else {
                 this._mainAudio.currentTime = this._currentTimeMs / 1000;
-                this._mainAudio.play().catch(() => {});
+                this._mainAudio.play().catch(() => { });
                 this._mainAudioPausedByScene = false;
             }
         }
@@ -258,17 +266,57 @@ export class JsonVideo extends HTMLElement {
     _renderCurrentScene() {
         const scene = this._processedScenes[this._currentSceneIndex];
         if (!scene) return;
-        const doc = this.renderer.contentDocument;
-        doc.open(); doc.write(scene.html || ''); doc.close();
-        if (doc.body) { doc.body.style.margin = '0'; doc.body.style.overflow = 'hidden'; }
+
+        // 1. Handle HTML Rendering via Blob URL
+        if (scene.html) {
+            // Clean up previous blob to prevent memory leaks
+            if (this._currentBlobUrl) {
+                URL.revokeObjectURL(this._currentBlobUrl);
+            }
+
+            const blob = new Blob([`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { margin: 0; overflow: hidden; background: transparent; }
+                </style>
+            </head>
+            <body>${scene.html}</body>
+            </html>
+        `], { type: 'text/html' });
+
+            this._currentBlobUrl = URL.createObjectURL(blob);
+            this.renderer.src = this._currentBlobUrl;
+        } else {
+            this.renderer.src = 'about:blank';
+        }
+
+        // 2. Handle Captions
         this.ccText.textContent = scene.speech || "";
         this.ccOverlay.classList.toggle('hidden', !(this._showCaptions && scene.speech));
+
+        // 3. Handle Audio Synchronization
         const sceneTime = (this._currentTimeMs - scene.startTimeMs) / 1000;
         if (scene.audio) {
-            if (this._sceneAudio.getAttribute('src') !== scene.audio) { this._sceneAudio.src = scene.audio; this._sceneAudio.load(); }
-            try { if (Math.abs(this._sceneAudio.currentTime - sceneTime) > 0.2) this._sceneAudio.currentTime = Math.max(0, sceneTime); } catch(e) {}
-            if (this._isPlaying) this._sceneAudio.play().catch(() => {});
-        } else { this._sceneAudio.pause(); }
+            if (this._sceneAudio.getAttribute('src') !== scene.audio) {
+                this._sceneAudio.src = scene.audio;
+                this._sceneAudio.load();
+            }
+
+            // Only sync if the drift is significant (>200ms)
+            try {
+                if (Math.abs(this._sceneAudio.currentTime - sceneTime) > 0.2) {
+                    this._sceneAudio.currentTime = Math.max(0, sceneTime);
+                }
+            } catch (e) { }
+
+            if (this._isPlaying) {
+                this._sceneAudio.play().catch(() => { });
+            }
+        } else {
+            this._sceneAudio.pause();
+        }
     }
 }
 customElements.define('json-video', JsonVideo);
