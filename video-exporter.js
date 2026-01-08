@@ -35,14 +35,13 @@ export class VideoExporter {
         }
     }
 
-    async captureAndEncode(statusCallback) {
+async captureAndEncode(statusCallback) {
         const totalDuration = this.player.duration;
         this._renderQueue = [];
         this._captureFinished = false;
-        this._frameCount = 0; // The frame we are collecting
-        let processedCount = 0; // The frame we have finished rendering
-
-        // 1. Audio Hijack Setup (Real-time required)
+        this._frameCount = 0;
+        
+        // 1. Audio Hijack Setup
         if (!this.audioCtx) {
             this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             this.dest = this.audioCtx.createMediaStreamDestination();
@@ -56,62 +55,69 @@ export class VideoExporter {
 
         const audioChunks = [];
         const recorder = new MediaRecorder(this.dest.stream, { mimeType: 'audio/webm;codecs=opus' });
-        recorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+        
+        // FIX 1: specific handler for the single large chunk
+        recorder.ondataavailable = e => { 
+            if (e.data.size > 0) audioChunks.push(e.data); 
+        };
 
         const frameInterval = 1000 / this.fps;
         let lastCaptureTime = 0;
 
-        // 2. Start the Render Worker (Async Loop)
-        // This runs in parallel to the playback
         const renderPromise = this._processRenderQueue(statusCallback);
 
         // 3. Start Playback
         this.player.currentTime = 0;
-        recorder.start(100); // Small chunk size for safety
+        
+        // FIX 2: No 'timeslice' argument. 
+        // This ensures the browser calculates correct headers/duration 
+        // and provides one clean blob on stop.
+        recorder.start(); 
+        
         this.player.play();
 
         return new Promise((resolve, reject) => {
             
-            // --- LOOP A: The "Collector" (Sync with Video) ---
-            // Its only job is to grab DOM snapshots. It must be fast.
             const collectorLoop = (timestamp) => {
-                // Stop condition
                 if (this.player.currentTime >= totalDuration || (this.player.paused && this.player.currentTime > 0)) {
                     recorder.stop();
-                    this._captureFinished = true; // Tell render loop we are done collecting
+                    this._captureFinished = true;
                     return;
                 }
 
-                // Check if it's time for a frame (every 100ms)
                 if (timestamp - lastCaptureTime >= frameInterval) {
                     lastCaptureTime = timestamp;
 
-                    // Grab the DOM state NOW
-                    const iframeBody = this.player.shadowRoot.querySelector('#scene-renderer').contentDocument.body;
-                    
-                    // Clone deeply. This captures the state of text/styles at this exact moment.
-                    const clone = iframeBody.cloneNode(true);
-                    
-                    // Push to queue for the "Processor" to handle later
-                    this._renderQueue.push({
-                        id: this._frameCount,
-                        node: clone,
-                        htmlSignature: clone.innerHTML // Capture text state for comparison
-                    });
+                    const iframe = this.player.shadowRoot.querySelector('#scene-renderer');
+                    const doc = iframe.contentDocument;
 
-                    this._frameCount++;
+                    if (doc) {
+                        const clone = doc.body.cloneNode(true);
+                        const styleTags = Array.from(doc.querySelectorAll('style, link[rel="stylesheet"]'))
+                            .map(el => el.outerHTML)
+                            .join('');
+
+                        this._renderQueue.push({
+                            id: this._frameCount,
+                            node: clone,
+                            styles: styleTags,
+                            htmlSignature: clone.innerHTML
+                        });
+
+                        this._frameCount++;
+                    }
                 }
-
                 requestAnimationFrame(collectorLoop);
             };
 
             recorder.onstop = async () => {
                 try {
-                    statusCallback("Playback finished. Waiting for renderer to catch up...");
+                    statusCallback("Playback finished. Waiting for renderer...");
+                    await renderPromise;
                     
-                    // Wait for the render loop to finish the queue
-                    await renderPromise; 
-
+                    // FIX 3: Verify we actually captured audio
+                    console.log(`Audio Capture Complete: ${audioChunks.length} chunks`);
+                    
                     const result = await this._finalize(audioChunks, statusCallback);
                     resolve(result);
                 } catch (err) { reject(err); }
@@ -120,9 +126,64 @@ export class VideoExporter {
             requestAnimationFrame(collectorLoop);
         });
     }
+async _finalize(audioChunks, statusCallback) {
+        // 1. Save Audio File
+        statusCallback("Preparing Assets...");
+        const totalAudioSize = audioChunks.reduce((acc, chunk) => acc + chunk.size, 0);
+        if (totalAudioSize === 0) console.warn("Warning: Audio size is 0 bytes");
 
-    // --- LOOP B: The "Processor" (Async / Catch-up) ---
-    // --- LOOP B: The "Processor" (Async / Catch-up) ---
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+        const audioBuffer = new Uint8Array(await audioBlob.arrayBuffer());
+        await this.ffmpeg.writeFile('input_audio.webm', audioBuffer);
+
+        // --- PHASE 1: VIDEO ENCODE (Images -> MP4) ---
+        statusCallback("Phase 1/2: Encoding Video...");
+        
+        await this.ffmpeg.exec([
+            '-hide_banner',
+            '-y',
+            '-framerate', String(this.fps),
+            '-i', 'f_%d.jpg',             // Input: Images
+            
+            // Video Settings
+            '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p',
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '32',
+            '-an',                        // No Audio in this pass
+            '-frames:v', String(this._frameCount),
+            'video_intermediate.mp4'
+        ]);
+
+        // --- CLEANUP: Free up memory for Phase 2 ---
+        // We delete the images now that they are inside the mp4
+        for (let i = 0; i < this._frameCount; i++) {
+            try { await this.ffmpeg.deleteFile(`f_${i}.jpg`); } catch(e) {}
+        }
+
+        // --- PHASE 2: MERGE (Video + Audio -> Final) ---
+        statusCallback("Phase 2/2: Merging Audio...");
+
+        await this.ffmpeg.exec([
+            '-hide_banner',
+            '-y',
+            '-i', 'video_intermediate.mp4', // Input 0: Clean Video
+            '-i', 'input_audio.webm',       // Input 1: Audio
+            
+            '-map', '0:v',                  // Use Video from Input 0
+            '-map', '1:a',                  // Use Audio from Input 1
+            
+            '-c:v', 'copy',                 // COPY video (Do not re-encode! Fast!)
+            '-c:a', 'aac',                  // Encode Audio
+            '-b:a', '128k',
+            '-shortest',                    // Stop when video ends
+            'output.mp4'
+        ]);
+
+        const data = await this.ffmpeg.readFile('output.mp4');
+        return URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+    }
+    
    // --- LOOP B: The "Processor" ---
     async _processRenderQueue(statusCallback) {
         let lastSignature = null;
@@ -199,39 +260,5 @@ export class VideoExporter {
         }
         statusCallback("Rendering Complete.");
     }
-    async _finalize(audioChunks, statusCallback) {
-        statusCallback("Encoding Video ONLY (Debug Mode)...");
-
-        // DEBUG: Commented out Audio Write
-        /*
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
-        const audioBuffer = new Uint8Array(await audioBlob.arrayBuffer());
-        await this.ffmpeg.writeFile('input_audio.webm', audioBuffer);
-        */
-
-        // 2. Encode
-        await this.ffmpeg.exec([
-            '-hide_banner',
-            '-y',
-            '-threads', '1',
-            '-err_detect', 'ignore_err',
-            '-framerate', String(this.fps),
-            '-i', 'f_%d.jpg',
-            // '-i', 'input_audio.webm', // REMOVED Audio Input
-            '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p',
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '32',
-            // '-c:a', 'aac',            // REMOVED Audio Codec
-            // '-b:a', '128k',           // REMOVED Audio Bitrate
-            '-fps_mode', 'cfr',
-            '-frames:v', String(this._frameCount), 
-            // '-movflags', '+faststart', 
-            // '-shortest',              // REMOVED (No longer applicable with 1 stream)
-            'output.mp4'
-        ]);
-
-        const data = await this.ffmpeg.readFile('output.mp4');
-        return URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
-    }
+    
 }
