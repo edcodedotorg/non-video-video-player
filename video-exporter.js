@@ -1,6 +1,9 @@
 import { FFmpeg } from './node_modules/@ffmpeg/ffmpeg/dist/esm/index.js';
 import { toBlobURL, fetchFile } from './node_modules/@ffmpeg/util/dist/esm/index.js';
 
+ // Polling frequency 
+const POLL_MS = 10; 
+
 export class VideoExporter {
     constructor(playerElement) {
         this.player = playerElement;
@@ -40,10 +43,27 @@ async captureAndEncode(statusCallback) {
         this._renderQueue = [];
         this._captureFinished = false;
         this._frameCount = 0;
+
+        // --- USER STRATEGY: Ideal Timeline Array ---
+        // 1. Generate the array of ideal frame times [0, 0.1, 0.2, ... end]
+        const idealFrameTimes = [];
+        const frameInterval = 1.0 / this.fps; // e.g., 0.1s
+        let t = 0;
+        while (t < totalDuration) {
+            idealFrameTimes.push(t);
+            t += frameInterval;
+        }
         
-        // 1. Audio Hijack Setup
+        // Log the target for debugging
+        console.log(`[Target] Total Duration: ${totalDuration}s`);
+        console.log(`[Target] Expected Frames: ${idealFrameTimes.length}`);
+
+        // Pointer to the next frame we need to fill in the array
+        let nextFrameIndex = 0;
+
+        // 2. Audio Setup (Standard)
         if (!this.audioCtx) {
-            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            this.audioCtx = new(window.AudioContext || window.webkitAudioContext)();
             this.dest = this.audioCtx.createMediaStreamDestination();
             this.player.shadowRoot.querySelectorAll('audio').forEach(audio => {
                 const source = this.audioCtx.createMediaElementSource(audio);
@@ -54,76 +74,103 @@ async captureAndEncode(statusCallback) {
         if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
 
         const audioChunks = [];
-        const recorder = new MediaRecorder(this.dest.stream, { mimeType: 'audio/webm;codecs=opus' });
-        
-        // FIX 1: specific handler for the single large chunk
-        recorder.ondataavailable = e => { 
-            if (e.data.size > 0) audioChunks.push(e.data); 
+        const recorder = new MediaRecorder(this.dest.stream, {
+            mimeType: 'audio/webm;codecs=opus'
+        });
+        recorder.ondataavailable = e => {
+            if (e.data.size > 0) audioChunks.push(e.data);
         };
-
-        const frameInterval = 1000 / this.fps;
-        let lastCaptureTime = 0;
 
         const renderPromise = this._processRenderQueue(statusCallback);
 
         // 3. Start Playback
         this.player.currentTime = 0;
-        
-        // FIX 2: No 'timeslice' argument. 
-        // This ensures the browser calculates correct headers/duration 
-        // and provides one clean blob on stop.
-        recorder.start(); 
-        
+        recorder.start();
         this.player.play();
 
         return new Promise((resolve, reject) => {
             
-            const collectorLoop = (timestamp) => {
-                if (this.player.currentTime >= totalDuration || (this.player.paused && this.player.currentTime > 0)) {
+           
+            const intervalId = setInterval(() => {
+                const currentTime = this.player.currentTime;
+
+                // Stop Condition: End of video OR we have filled all ideal frames
+                if ((this.player.paused && this.player.currentTime > 0 && currentTime >= totalDuration) || 
+                    nextFrameIndex >= idealFrameTimes.length) {
+                    
+                    clearInterval(intervalId);
                     recorder.stop();
-                    this._captureFinished = true;
+                    
+                    // Safety: If audio ran slightly longer than video, or video ended abruptly,
+                    // ensure we processed everything.
+                    finishExport();
                     return;
                 }
 
-                if (timestamp - lastCaptureTime >= frameInterval) {
-                    lastCaptureTime = timestamp;
+                // --- CORE LOGIC: Check against Ideal Times ---
+                // We check if the current time has passed the "ideal time" for the next frame(s).
+                // If the video lagged and jumped from 0.1s to 0.5s, this loop will run 4 times 
+                // and assign the CURRENT clone to frames 0.1, 0.2, 0.3, and 0.4.
+                
+                let capturedClone = null; // Cache clone to avoid duplicates in this specific tick
+                let capturedStyles = null;
+                let capturedSignature = null;
 
-                    const iframe = this.player.shadowRoot.querySelector('#scene-renderer');
-                    const doc = iframe.contentDocument;
+                // While the next frame's ideal time is in the past (<= currentTime)...
+                while (nextFrameIndex < idealFrameTimes.length && idealFrameTimes[nextFrameIndex] <= currentTime) {
+                    
+                    // We only clone DOM ONCE per tick, even if we are filling 5 frames.
+                    if (!capturedClone) {
+                        const iframe = this.player.shadowRoot.querySelector('#scene-renderer');
+                        const doc = iframe.contentDocument;
+                        if (doc) {
+                            capturedClone = doc.body.cloneNode(true);
+                            capturedStyles = Array.from(doc.querySelectorAll('style, link[rel="stylesheet"]'))
+                                .map(el => el.outerHTML)
+                                .join('');
+                            capturedSignature = capturedClone.innerHTML;
+                        }
+                    }
 
-                    if (doc) {
-                        const clone = doc.body.cloneNode(true);
-                        const styleTags = Array.from(doc.querySelectorAll('style, link[rel="stylesheet"]'))
-                            .map(el => el.outerHTML)
-                            .join('');
-
+                    if (capturedClone) {
                         this._renderQueue.push({
-                            id: this._frameCount,
-                            node: clone,
-                            styles: styleTags,
-                            htmlSignature: clone.innerHTML
+                            id: nextFrameIndex, // Use the Index from the array as ID
+                            node: capturedClone,
+                            styles: capturedStyles,
+                            htmlSignature: capturedSignature
                         });
-
-                        this._frameCount++;
+                        
+                        // Move the pointer to the next ideal frame
+                        nextFrameIndex++;
+                    } else {
+                        // If iframe isn't ready, we break to try again next tick 
+                        // (or we skip if it's a hard fail, but usually just wait)
+                        break;
                     }
                 }
-                requestAnimationFrame(collectorLoop);
-            };
 
-            recorder.onstop = async () => {
+            }, POLL_MS);
+
+            // Helper to wrap up
+            const finishExport = async () => {
+                this._captureFinished = true;
+                this._frameCount = nextFrameIndex; // Use the array pointer as the count
+
+                statusCallback("Playback finished. Waiting for renderer...");
+                console.log(`[Result] Captured Frames: ${this._frameCount}`);
+                
                 try {
-                    statusCallback("Playback finished. Waiting for renderer...");
+                    recorder.stop(); // Ensure stopped
+                } catch(e){}
+
+                try {
                     await renderPromise;
-                    
-                    // FIX 3: Verify we actually captured audio
-                    console.log(`Audio Capture Complete: ${audioChunks.length} chunks`);
-                    
                     const result = await this._finalize(audioChunks, statusCallback);
                     resolve(result);
-                } catch (err) { reject(err); }
+                } catch (err) {
+                    reject(err);
+                }
             };
-
-            requestAnimationFrame(collectorLoop);
         });
     }
 async _finalize(audioChunks, statusCallback) {
