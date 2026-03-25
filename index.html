@@ -416,7 +416,8 @@
                 }
             } catch (err) {
                 console.error("Export Error:", err);
-                statusText.innerHTML = `<span class="text-red-500 font-bold">Error: ${err.message}</span>`;
+                const errMessage = err?.message || (typeof err === 'string' ? err : JSON.stringify(err));
+                statusText.innerHTML = `<span class="text-red-500 font-bold">Error: ${errMessage}</span>`;
             } finally {
                 encodeBtn.disabled = false;
             }

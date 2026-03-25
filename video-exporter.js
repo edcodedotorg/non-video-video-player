@@ -1,5 +1,5 @@
 import { FFmpeg } from './node_modules/@ffmpeg/ffmpeg/dist/esm/index.js';
-import { toBlobURL, fetchFile } from './node_modules/@ffmpeg/util/dist/esm/index.js';
+import { toBlobURL } from './node_modules/@ffmpeg/util/dist/esm/index.js';
 
  // Polling frequency 
 const POLL_MS = 10; 
@@ -24,17 +24,18 @@ export class VideoExporter {
     async init(statusCallback) {
         if (this._isLoaded) return;
         statusCallback("Initializing FFmpeg...");
-        const baseURL = `${window.location.origin}/node_modules/@ffmpeg/core-mt/dist/esm/`;
+        const baseURL = `${window.location.origin}/node_modules/@ffmpeg/core/dist/esm`;
         try {
             await this.ffmpeg.load({
                 coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                 wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
             });
             this._isLoaded = true;
             statusCallback("FFmpeg Ready.");
         } catch (e) {
-            statusCallback("Init Failed: " + e.message);
+            const message = e?.message || String(e);
+            statusCallback("Init Failed: " + message);
+            throw new Error(message);
         }
     }
 
@@ -62,30 +63,37 @@ async captureAndEncode(statusCallback) {
         let nextFrameIndex = 0;
 
         // 2. Audio Setup (Standard)
-        if (!this.audioCtx) {
-            this.audioCtx = new(window.AudioContext || window.webkitAudioContext)();
-            this.dest = this.audioCtx.createMediaStreamDestination();
-            this.player.shadowRoot.querySelectorAll('audio').forEach(audio => {
-                const source = this.audioCtx.createMediaElementSource(audio);
-                source.connect(this.dest);
-                source.connect(this.audioCtx.destination);
-            });
-        }
-        if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
-
         const audioChunks = [];
-        const recorder = new MediaRecorder(this.dest.stream, {
-            mimeType: 'audio/webm;codecs=opus'
-        });
-        recorder.ondataavailable = e => {
-            if (e.data.size > 0) audioChunks.push(e.data);
-        };
+        let recorder = null;
+
+        try {
+            if (!this.audioCtx) {
+                this.audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+                this.dest = this.audioCtx.createMediaStreamDestination();
+                this.player.shadowRoot.querySelectorAll('audio').forEach(audio => {
+                    const source = this.audioCtx.createMediaElementSource(audio);
+                    source.connect(this.dest);
+                    source.connect(this.audioCtx.destination);
+                });
+            }
+            if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
+
+            const canUseOpus = MediaRecorder.isTypeSupported('audio/webm;codecs=opus');
+            const recorderOptions = canUseOpus ? { mimeType: 'audio/webm;codecs=opus' } : undefined;
+            recorder = new MediaRecorder(this.dest.stream, recorderOptions);
+            recorder.ondataavailable = e => {
+                if (e.data.size > 0) audioChunks.push(e.data);
+            };
+        } catch (audioSetupError) {
+            console.warn("Audio capture unavailable. Continuing with video-only export.", audioSetupError);
+            statusCallback("Audio capture unavailable. Exporting video only...");
+        }
 
         const renderPromise = this._processRenderQueue(statusCallback);
 
         // 3. Start Playback
         this.player.currentTime = 0;
-        recorder.start();
+        if (recorder) recorder.start();
         this.player.play();
 
         return new Promise((resolve, reject) => {
@@ -99,7 +107,7 @@ async captureAndEncode(statusCallback) {
                     nextFrameIndex >= idealFrameTimes.length) {
                     
                     clearInterval(intervalId);
-                    recorder.stop();
+                    if (recorder && recorder.state !== 'inactive') recorder.stop();
                     
                     // Safety: If audio ran slightly longer than video, or video ended abruptly,
                     // ensure we processed everything.
@@ -160,7 +168,7 @@ async captureAndEncode(statusCallback) {
                 console.log(`[Result] Captured Frames: ${this._frameCount}`);
                 
                 try {
-                    recorder.stop(); // Ensure stopped
+                    if (recorder && recorder.state !== 'inactive') recorder.stop(); // Ensure stopped
                 } catch(e){}
 
                 try {
@@ -179,9 +187,17 @@ async _finalize(audioChunks, statusCallback) {
         const totalAudioSize = audioChunks.reduce((acc, chunk) => acc + chunk.size, 0);
         if (totalAudioSize === 0) console.warn("Warning: Audio size is 0 bytes");
 
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
-        const audioBuffer = new Uint8Array(await audioBlob.arrayBuffer());
-        await this.ffmpeg.writeFile('input_audio.webm', audioBuffer);
+        let hasAudio = totalAudioSize > 0;
+        if (hasAudio) {
+            try {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+                const audioBuffer = new Uint8Array(await audioBlob.arrayBuffer());
+                await this.ffmpeg.writeFile('input_audio.webm', audioBuffer);
+            } catch (audioWriteError) {
+                console.warn("Audio asset write failed; falling back to video-only export.", audioWriteError);
+                hasAudio = false;
+            }
+        }
 
         // --- PHASE 1: VIDEO ENCODE (Images -> MP4) ---
         statusCallback("Phase 1/2: Encoding Video...");
@@ -208,24 +224,36 @@ async _finalize(audioChunks, statusCallback) {
             try { await this.ffmpeg.deleteFile(`f_${i}.jpg`); } catch(e) {}
         }
 
-        // --- PHASE 2: MERGE (Video + Audio -> Final) ---
-        statusCallback("Phase 2/2: Merging Audio...");
+        if (hasAudio) {
+            // --- PHASE 2: MERGE (Video + Audio -> Final) ---
+            statusCallback("Phase 2/2: Merging Audio...");
 
-        await this.ffmpeg.exec([
-            '-hide_banner',
-            '-y',
-            '-i', 'video_intermediate.mp4', // Input 0: Clean Video
-            '-i', 'input_audio.webm',       // Input 1: Audio
-            
-            '-map', '0:v',                  // Use Video from Input 0
-            '-map', '1:a',                  // Use Audio from Input 1
-            
-            '-c:v', 'copy',                 // COPY video (Do not re-encode! Fast!)
-            '-c:a', 'aac',                  // Encode Audio
-            '-b:a', '128k',
-            '-shortest',                    // Stop when video ends
-            'output.mp4'
-        ]);
+            await this.ffmpeg.exec([
+                '-hide_banner',
+                '-y',
+                '-i', 'video_intermediate.mp4', // Input 0: Clean Video
+                '-i', 'input_audio.webm',       // Input 1: Audio
+                
+                '-map', '0:v',                  // Use Video from Input 0
+                '-map', '1:a',                  // Use Audio from Input 1
+                
+                '-c:v', 'copy',                 // COPY video (Do not re-encode! Fast!)
+                '-c:a', 'aac',                  // Encode Audio
+                '-b:a', '128k',
+                '-shortest',                    // Stop when video ends
+                'output.mp4'
+            ]);
+        } else {
+            statusCallback("Phase 2/2: Finalizing Video...");
+            await this.ffmpeg.exec([
+                '-hide_banner',
+                '-y',
+                '-i', 'video_intermediate.mp4',
+                '-c:v', 'copy',
+                '-an',
+                'output.mp4'
+            ]);
+        }
 
         const data = await this.ffmpeg.readFile('output.mp4');
         return URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
