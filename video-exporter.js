@@ -49,10 +49,9 @@ async captureAndEncode(statusCallback) {
         // 1. Generate the array of ideal frame times [0, 0.1, 0.2, ... end]
         const idealFrameTimes = [];
         const frameInterval = 1.0 / this.fps; // e.g., 0.1s
-        let t = 0;
-        while (t < totalDuration) {
-            idealFrameTimes.push(t);
-            t += frameInterval;
+        const targetFrameCount = Math.max(1, Math.ceil(totalDuration * this.fps) + 1);
+        for (let i = 0; i < targetFrameCount; i++) {
+            idealFrameTimes.push(Math.min(i * frameInterval, totalDuration));
         }
         
         // Log the target for debugging
@@ -102,19 +101,6 @@ async captureAndEncode(statusCallback) {
             const intervalId = setInterval(() => {
                 const currentTime = this.player.currentTime;
 
-                // Stop Condition: End of video OR we have filled all ideal frames
-                if ((this.player.paused && this.player.currentTime > 0 && currentTime >= totalDuration) || 
-                    nextFrameIndex >= idealFrameTimes.length) {
-                    
-                    clearInterval(intervalId);
-                    if (recorder && recorder.state !== 'inactive') recorder.stop();
-                    
-                    // Safety: If audio ran slightly longer than video, or video ended abruptly,
-                    // ensure we processed everything.
-                    finishExport();
-                    return;
-                }
-
                 // --- CORE LOGIC: Check against Ideal Times ---
                 // We check if the current time has passed the "ideal time" for the next frame(s).
                 // If the video lagged and jumped from 0.1s to 0.5s, this loop will run 4 times 
@@ -155,6 +141,20 @@ async captureAndEncode(statusCallback) {
                         // (or we skip if it's a hard fail, but usually just wait)
                         break;
                     }
+                }
+
+                // Stop Condition: End of video OR we have filled all ideal frames.
+                // This is intentionally after frame capture so the final tick can
+                // still fill tail frames when currentTime reaches totalDuration.
+                if ((this.player.paused && this.player.currentTime > 0 && currentTime >= totalDuration) ||
+                    nextFrameIndex >= idealFrameTimes.length) {
+                    clearInterval(intervalId);
+                    if (recorder && recorder.state !== 'inactive') recorder.stop();
+
+                    // Safety: If audio ran slightly longer than video, or video ended abruptly,
+                    // ensure we processed everything.
+                    finishExport();
+                    return;
                 }
 
             }, POLL_MS);
