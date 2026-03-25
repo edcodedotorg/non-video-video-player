@@ -1,7 +1,15 @@
 {
+  "scripts": {
+    "playwright:install": "playwright install --with-deps",
+    "playwright:test": "playwright test"
+  },
   "dependencies": {
     "@ffmpeg/core-mt": "^0.12.10",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0",
+    "http-server": "^14.1.1"
   }
 }
