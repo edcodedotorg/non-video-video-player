@@ -28,3 +28,14 @@ Add the following object to your configuration:
     "Cross-Origin-Embedder-Policy": "require-corp"
 }
 ```
+### Deploy to GitHub Pages
+
+This repo includes a GitHub Actions workflow at `.github/workflows/deploy.yml`.
+
+On every push to `main`, the workflow:
+1. Installs npm dependencies.
+2. Copies the static app files and `examples/` into a `pages/` folder.
+3. Copies the minimal browser FFmpeg files from `node_modules` into `pages/node_modules`.
+4. Publishes `pages/` to the `gh-pages` branch.
+
+In GitHub repo settings, configure Pages to use the `gh-pages` branch with `/` (root).
