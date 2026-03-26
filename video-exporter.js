@@ -266,8 +266,9 @@ async _finalize(audioChunks, statusCallback) {
         if (this._isRendering) return;
         this._isRendering = true;
 
-        let lastRenderedSignature = null;
-        let lastRenderedFramePath = null;
+        let lastSignature = null;
+        let lastBuffer = null;
+        let processedIndex = 0;
 
         while (!this._captureFinished || this._renderQueue.length > 0) {
             if (this._renderQueue.length === 0) {
@@ -276,33 +277,63 @@ async _finalize(audioChunks, statusCallback) {
             }
 
             const job = this._renderQueue.shift();
-            statusCallback(`Rendering Frame ${job.id}...`);
 
-            if (job.htmlSignature === lastRenderedSignature && lastRenderedFramePath !== null) {
-                try {
-                    const previousFrameData = await this.ffmpeg.readFile(lastRenderedFramePath);
-                    await this.ffmpeg.writeFile(`f_${job.id}.jpg`, previousFrameData);
-                    console.log(`[Optimizer] DUPLICATE frame at index ${job.id}. Reused ${lastRenderedFramePath}`);
-                    continue;
-                } catch (reuseError) {
-                    console.warn(`[Optimizer] Reuse failed for frame ${job.id}, re-rendering...`, reuseError);
+            try {
+                if (lastBuffer && job.htmlSignature === lastSignature) {
+                    await this.ffmpeg.writeFile(`f_${job.id}.jpg`, new Uint8Array(lastBuffer));
+                } else {
+                    const container = document.createElement('div');
+                    container.style.position = 'fixed';
+                    container.style.left = '-9999px';
+                    container.style.top = '0';
+                    container.style.width = '1280px';
+                    container.style.height = '720px';
+                    container.innerHTML = job.styles || '';
+                    container.appendChild(job.node);
+                    document.body.appendChild(container);
+
+                    const images = Array.from(container.querySelectorAll('img'));
+                    if (images.length > 0) {
+                        await Promise.all(images.map((img) => {
+                            if (img.complete) return Promise.resolve();
+                            return new Promise((resolve) => {
+                                img.onload = resolve;
+                                img.onerror = resolve;
+                            });
+                        }));
+                    }
+
+                    const canvas = await html2canvas(container, {
+                        useCORS: true,
+                        allowTaint: true,
+                        logging: false,
+                        scale: 1,
+                        width: 1280,
+                        height: 720,
+                        backgroundColor: '#ffffff'
+                    });
+
+                    document.body.removeChild(container);
+
+                    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.8));
+                    const buffer = new Uint8Array(await blob.arrayBuffer());
+
+                    lastBuffer = buffer;
+                    lastSignature = job.htmlSignature;
+
+                    await this.ffmpeg.writeFile(`f_${job.id}.jpg`, new Uint8Array(buffer));
                 }
+
+                processedIndex++;
+                if (processedIndex % 5 === 0) {
+                    statusCallback(`Processing: ${processedIndex} / ${this._frameCount} frames`);
+                }
+            } catch (e) {
+                console.error('Render Error:', e);
             }
-
-            const canvas = await html2canvas(job.node, {
-                foreignObjectRendering: true,
-                backgroundColor: '#fff',
-                useCORS: true,
-            });
-            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.95));
-            const data = new Uint8Array(await blob.arrayBuffer());
-            const framePath = `f_${job.id}.jpg`;
-            await this.ffmpeg.writeFile(framePath, data);
-
-            lastRenderedSignature = job.htmlSignature;
-            lastRenderedFramePath = framePath;
         }
 
         this._isRendering = false;
+        statusCallback('Rendering Complete.');
     }
 }
