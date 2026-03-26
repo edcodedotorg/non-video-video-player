@@ -24,11 +24,14 @@ export class VideoExporter {
     async init(statusCallback) {
         if (this._isLoaded) return;
         statusCallback("Initializing FFmpeg...");
-        const baseURL = `${window.location.origin}/node_modules/@ffmpeg/core/dist/esm`;
+
+        const coreJsURL = new URL('./node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js', import.meta.url);
+        const coreWasmURL = new URL('./node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm', import.meta.url);
+
         try {
             await this.ffmpeg.load({
-                coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                coreURL: await toBlobURL(coreJsURL.href, 'text/javascript'),
+                wasmURL: await toBlobURL(coreWasmURL.href, 'application/wasm'),
             });
             this._isLoaded = true;
             statusCallback("FFmpeg Ready.");
@@ -258,82 +261,79 @@ async _finalize(audioChunks, statusCallback) {
         const data = await this.ffmpeg.readFile('output.mp4');
         return URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
     }
-    
-   // --- LOOP B: The "Processor" ---
+
     async _processRenderQueue(statusCallback) {
+        if (this._isRendering) return;
+        this._isRendering = true;
+
         let lastSignature = null;
         let lastBuffer = null;
         let processedIndex = 0;
 
         while (!this._captureFinished || this._renderQueue.length > 0) {
-            
-            if (this._renderQueue.length > 0) {
-                const job = this._renderQueue.shift(); 
-                
-                try {
-                    // OPTIMIZATION: Check for Identical Content
-                    if (lastBuffer && job.htmlSignature === lastSignature) {
-                        await this.ffmpeg.writeFile(`f_${job.id}.jpg`, new Uint8Array(lastBuffer));
-                    } 
-                    else {
-                        const container = document.createElement('div');
-                        container.style.position = 'fixed';
-                        container.style.left = '-9999px';
-                        container.style.top = '0';
-                        container.style.width = '1280px'; 
-                        container.style.height = '720px';
-                        
-                        // Append content
-                        container.appendChild(job.node);
-                        document.body.appendChild(container);
+            if (this._renderQueue.length === 0) {
+                await new Promise(r => setTimeout(r, POLL_MS));
+                continue;
+            }
 
-                        // --- FIX: Wait for Images to Load ---
-                        const images = Array.from(container.querySelectorAll('img'));
-                        if (images.length > 0) {
-                            await Promise.all(images.map(img => {
-                                if (img.complete) return Promise.resolve();
-                                return new Promise(resolve => {
-                                    img.onload = resolve;
-                                    img.onerror = resolve; // Continue even if one fails
-                                });
-                            }));
-                        }
-                        // ------------------------------------
+            const job = this._renderQueue.shift();
 
-                        const canvas = await html2canvas(container, { 
-                            useCORS: true,
-                            allowTaint: true,
-                            logging: false,
-                            scale: 1, 
-                            width: 1280,
-                            height: 720,
-                            backgroundColor: '#ffffff' // Ensure white background for transparency
-                        });
+            try {
+                if (lastBuffer && job.htmlSignature === lastSignature) {
+                    await this.ffmpeg.writeFile(`f_${job.id}.jpg`, new Uint8Array(lastBuffer));
+                } else {
+                    const container = document.createElement('div');
+                    container.style.position = 'fixed';
+                    container.style.left = '-9999px';
+                    container.style.top = '0';
+                    container.style.width = '1280px';
+                    container.style.height = '720px';
+                    container.innerHTML = job.styles || '';
+                    container.appendChild(job.node);
+                    document.body.appendChild(container);
 
-                        document.body.removeChild(container);
-
-                        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
-                        const buffer = new Uint8Array(await blob.arrayBuffer());
-
-                        lastBuffer = buffer;
-                        lastSignature = job.htmlSignature;
-
-                        await this.ffmpeg.writeFile(`f_${job.id}.jpg`, new Uint8Array(buffer));
+                    const images = Array.from(container.querySelectorAll('img'));
+                    if (images.length > 0) {
+                        await Promise.all(images.map((img) => {
+                            if (img.complete) return Promise.resolve();
+                            return new Promise((resolve) => {
+                                img.onload = resolve;
+                                img.onerror = resolve;
+                            });
+                        }));
                     }
 
-                    processedIndex++;
-                    if (processedIndex % 5 === 0) {
-                        statusCallback(`Processing: ${processedIndex} / ${this._frameCount} frames`);
-                    }
+                    const canvas = await html2canvas(container, {
+                        useCORS: true,
+                        allowTaint: true,
+                        logging: false,
+                        scale: 1,
+                        width: 1280,
+                        height: 720,
+                        backgroundColor: '#ffffff'
+                    });
 
-                } catch (e) {
-                    console.error("Render Error:", e);
+                    document.body.removeChild(container);
+
+                    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.8));
+                    const buffer = new Uint8Array(await blob.arrayBuffer());
+
+                    lastBuffer = buffer;
+                    lastSignature = job.htmlSignature;
+
+                    await this.ffmpeg.writeFile(`f_${job.id}.jpg`, new Uint8Array(buffer));
                 }
-            } else {
-                await new Promise(r => setTimeout(r, 50));
+
+                processedIndex++;
+                if (processedIndex % 5 === 0) {
+                    statusCallback(`Processing: ${processedIndex} / ${this._frameCount} frames`);
+                }
+            } catch (e) {
+                console.error('Render Error:', e);
             }
         }
-        statusCallback("Rendering Complete.");
+
+        this._isRendering = false;
+        statusCallback('Rendering Complete.');
     }
-    
 }
