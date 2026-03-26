@@ -1,0 +1,49 @@
+{
+    "width": 1600,
+    "height": 900,
+    "scenes": [
+        {
+            "comment": "Scene 1: Introduction to Functions and their purpose.",
+            "html": "<html><body><img style='width: 100%' src='data:image/png;base64,' /></body></html>",
+            "speech": "Welcome! Let's learn about functions in Python. A function is like a named recipe or a mini-program within your main program. It's a block of code that performs a specific task. Functions help us organize our code and allow us to reuse that block of code whenever we need it, without writing it out every time.",
+            "elevenlabs": "[warmly welcoming] WELCOME! Let's learn about functions in Python. [patiently] A function is like a named recipe or a mini-program within your main program. It's a BLOCK of code that performs a specific task. [enthusiastic] Functions help us ORGANIZE our code and allow us to REUSE that block of code whenever we need it, without writing it out EVERY time.",
+            "duration": "21.8s"
+        },
+        {
+            "comment": "Scene 2: Introducing the 'def' keyword for function definition.",
+            "html": "<html><body><img style='width: 100%' src='data:image/png;base64,' /></body></html>",
+            "speech": "To define a function, we start with the keyword `def`. This tells Python that we are about to create a new function. Here, we see `def greet()`, starting the definition of our first function.",
+            "elevenlabs": "[deliberate] To define a function, we start with the KEYWORD DEF. [clearly] This tells Python that we are about to create a NEW function. [patiently] Here, we see DEF GREET, starting the definition of our FIRST function.",
+            "duration": "14.59s"
+        },
+        {
+            "comment": "Scene 3: Naming the function.",
+            "html": "<html><body><img style='width: 100%' src='data:image/png;base64,' /></body></html>",
+            "speech": "After `def`, we give our function a name. This name should describe what the function does. In this example, the function is named `greet`, which makes sense because its purpose is to perform a greeting.",
+            "elevenlabs": "[patiently] After DEF, we give our function a NAME. [important] This name should CLEARLY describe what the function does. [thoughtful] In this example, the function is named GREET, which makes perfect sense because its purpose is to perform a greeting.",
+            "duration": "13.06s"
+        },
+        {
+            "comment": "Scene 4: Adding parentheses and a colon to the function definition.",
+            "html": "<html><body><img style='width: 100%' src='data:image/png;base64,' /></body></html>",
+            "speech": "Following the function's name, we add a pair of parentheses `()` and then a colon `:`. The parentheses are important because they are where we would typically put any input information the function needs, and the colon signifies the end of the function's header and the start of its body.",
+            "elevenlabs": "[clearly] Following the function's name, we add a pair of PARENTHESES... and then a COLON. [deliberate] The parentheses are IMPORTANT because they are where we would typically put any INPUT information the function needs. [patiently] And the colon SIGNIFICANTLY marks the end of the function's HEADER and the start of its BODY.",
+            "duration": "18.07s"
+        },
+        {
+            "comment": "Scene 5: Explaining indentation for the function body.",
+            "html": "<html><body><img style='width: 100%' src='data:image/png;base64,' /></body></html>",
+            "speech": "Now, the actual steps or code that the function will perform go underneath the definition line. It's crucial that these lines are indented. Python uses this indentation, usually a Tab, to know which lines of code belong inside the function.",
+            "elevenlabs": "[important] Now, the actual steps or code that the function will perform go underneath the definition line. [deliberate] It's CRUCIAL that these lines are INDENTED. [patiently] Python uses this indentation, usually a Tab, to KNOW which lines of code belong inside the function.",
+            "duration": "13.45s"
+        },
+        {
+            "comment": "Scene 6: How to call a function.",
+            "html": "<html><body><img style='width: 100%' src='data:image/png;base64,' /></body></html>",
+            "speech": "Once a function is defined, you can call it to make it run. To do this, you simply type the function's name followed by parentheses. So, `greet()` will execute the code defined within our `greet` function, which in this case, prints 'Hello, World!' to the console.",
+            "elevenlabs": "[excited] Once a function is defined, you can CALL it to make it RUN! [direct] To do this, you SIMPLY type the function's NAME followed by parentheses. [enthusiastic] So, GREET will execute the code defined within our GREET function, which in this case, prints 'HELLO, WORLD!' to the console!",
+            "duration": "20s"
+        }
+    ],
+    "audio": "data:audio/mpeg;base64,"
+}
